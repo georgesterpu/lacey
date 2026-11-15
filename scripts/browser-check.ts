@@ -6,7 +6,7 @@ async function until(view:InstanceType<typeof Bun.WebView>,expression:string){co
 await using view=new Bun.WebView({width:1440,height:1150,backend:{type:'chrome',path:process.env.BUN_CHROME_PATH,url:false}});
 await view.navigate(base);await until(view,'document.querySelectorAll(".product-card").length > 0');
 assert.equal(await view.evaluate('document.documentElement.scrollWidth>innerWidth'),false);
-console.log('Desktop: deals loaded without horizontal overflow');await Bun.write('screenshots/desktop.png',await view.screenshot());
+await until(view,'[...document.querySelectorAll(".product-photo img")].slice(0,3).every(i=>i.complete&&i.naturalWidth>0)');console.log('Desktop: deals loaded without horizontal overflow');await Bun.write('screenshots/desktop.png',await view.screenshot());
 await view.click('.header-cta');
 await view.evaluate('(()=>{document.querySelector("[name=fit]").value="men";document.querySelector("#watch-size").value="9"})()');
 await view.click('#watch-next');await view.click('#watch-email');await view.type('browser-check@example.test');await view.click('input[name="consent"]');await view.click('#watch-submit');
@@ -14,6 +14,9 @@ await until(view,'!document.querySelector("#watch-dialog").open && document.quer
 await view.navigate(base);await until(view,'document.querySelector("#watch-count").textContent === "1"');console.log('Watch persisted after reload');
 await view.click('[data-tab="watches"]');await view.click('[data-pause]');await until(view,'document.querySelector(".watch-card")?.classList.contains("paused")');console.log('Watch paused');
 await view.click('[data-delete]');await until(view,'document.querySelectorAll(".watch-card").length === 0');console.log('Watch removed');
+await view.click('[data-tab="finds"]');await view.evaluate('(()=>{const f=document.querySelector("#filter-fit");f.value="kids";f.dispatchEvent(new Event("change",{bubbles:true}));})()');await until(view,'document.querySelector(".shoe-fit")?.textContent.includes("Kids")');await view.evaluate('document.querySelector(".watch-shoe").scrollIntoView({block:"center"})');await view.click('.watch-shoe');
+assert.equal(await view.evaluate('document.querySelector("[name=fit]").value'),'kids');assert.ok(await view.evaluate('document.querySelector("#watch-size-label").textContent.includes("as listed")'));
+await view.click('#watch-next');await view.click('#watch-email');await view.type('browser-kids@example.test');await view.click('input[name="consent"]');await view.click('#watch-submit');await until(view,'!document.querySelector("#watch-dialog").open && document.querySelectorAll(".watch-card").length===1');await view.click('[data-delete]');await until(view,'document.querySelectorAll(".watch-card").length===0');console.log('Kids watch saved with the shop’s listed size and removed');
 await using mobile=new Bun.WebView({width:390,height:844,backend:{type:'chrome',path:process.env.BUN_CHROME_PATH,url:false}});await mobile.navigate(base);await until(mobile,'document.querySelectorAll(".product-card").length > 0');
 assert.equal(await mobile.evaluate('document.documentElement.scrollWidth>innerWidth'),false);assert.equal(await mobile.evaluate('document.querySelectorAll("a[href*=signin]").length'),0);
 await Bun.write('screenshots/mobile.png',await mobile.screenshot());await mobile.click('.header-cta');await Bun.write('screenshots/mobile-watch.png',await mobile.screenshot());

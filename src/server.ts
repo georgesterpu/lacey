@@ -1,9 +1,13 @@
 import type { Env, Offer, Watch } from './types';
 import { categories, discount, freshCutoff, matches } from './types';
 import { initializeSources, scan } from './scan';
-import { device, claim, digest, rateLimit } from './identity';
+import { device, digest, rateLimit } from './identity';
 import { emailReady, sendConfirmation } from './email';
 import { shopLocation } from './shops';
+import { planDigests, dispatchDigests } from './outbox';
+import { digestEmail } from './email-template';
+import { nextCheck } from './schedule';
+import { sources as approvedSources } from './sources';
 import html from '../public/index.html' with {type:'text'};
 import css from '../public/style.css' with {type:'text'};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
@@ -27,21 +31,35 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(method!=='GET'&&request.headers.get('Origin')&&request.headers.get('Origin')!==url.origin)return json({error:'Please submit from this website'},403);
  if(path==='/style.css')return new Response(css,{headers:{'Content-Type':'text/css','Cache-Control':'no-cache'}});
  if(path==='/app.js')return new Response(clientCode,{headers:{'Content-Type':'text/javascript','Cache-Control':'no-cache'}});
- if(path==='/api/internal/scan'&&method==='POST'){
-  // This endpoint refreshes only the fixed public catalogue. No caller may choose
-  // recipients, URLs or content. An atomic claim limits it to two runs per UTC day,
-  // preserving the existing 08:00/20:00 updater without a public admin credential.
-  const slot=`scan-window:${new Date().toISOString().slice(0,10)}:${new Date().getUTCHours()<12?'am':'pm'}`;
-  if(!await claim(env,slot))return json({skipped:true,reason:'This scheduled check has already been requested'});
-  return json(await scan(env));
+ if(path.startsWith('/api/internal/')){
+  if(!env.CRON_SECRET||request.headers.get('Authorization')!==`Bearer ${env.CRON_SECRET}`)return json({error:'Scheduler authorization required. This endpoint is called by the deterministic scheduler, not a ChatGPT task.'},401);
+  if(method!=='POST')return json({error:'Use POST'},405);
+  if(path==='/api/internal/scan')return json(await scan(env));
+  if(path==='/api/internal/dispatch'){
+   const input=await body(request),runId=String(input.runId??'');if(!/^[a-f0-9-]{36}$/.test(runId))return json({error:'Invalid run'},400);
+   const plan=await planDigests(env,runId),delivery=await dispatchDigests(env,runId);
+   return json({plan,delivery});
+  }
+  return json({error:'Not found'},404);
+ }
+ if(path==='/email-preview'){
+  const offers=(await env.DB.prepare('SELECT * FROM current_offers WHERE available=1 AND reference_price>price ORDER BY price LIMIT 3').all<Offer>()).results;
+  return new Response(digestEmail(offers,env.APP_URL??url.origin,'/#my-watches',true).html,{headers:{'Content-Type':'text/html','Cache-Control':'no-store'}});
  }
  if(path==='/confirm-email'){
   const token=url.searchParams.get('token');if(!token||!/^([a-f0-9]{64})$/.test(token))return new Response('This confirmation link is invalid.',{status:400});
   const row=await env.DB.prepare('SELECT c.watch_id,w.owner_id,w.email FROM email_confirmations c JOIN watches w ON w.id=c.watch_id WHERE c.token_hash=? AND c.expires_at>?').bind(await digest(token),new Date().toISOString()).first<{watch_id:string;owner_id:string;email:string}>();
   if(!row)return page('This link has expired.','Open your watchlist to request a new confirmation.');
   // GET is a confirmation screen; email security scanners cannot opt people in.
-  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id)]);return page('Your email is confirmed.','We’ll email you when your shoe watch finds a match.');}
+  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id),env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())]);return page('Your email is confirmed.','We’ll email you when your shoe watch finds a match.');}
   return page('Confirm your shoe alert.','One click, and we’ll keep an eye out for you.','Confirm my email');
+ }
+ if(path==='/unsubscribe-all'){
+  const token=url.searchParams.get('token');if(!token||token.length>100)return page('This link is invalid.','Use the unsubscribe link in your email.');
+  const person=await env.DB.prepare('SELECT email,email_hash FROM subscribers WHERE unsubscribe_token=?').bind(token).first<{email:string;email_hash:string}>();
+  if(!person)return page('You’re all set.','This email subscription is no longer active.');
+  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE subscribers SET unsubscribed=1 WHERE email_hash=?').bind(person.email_hash),env.DB.prepare('UPDATE watches SET active=0 WHERE email=?').bind(person.email),env.DB.prepare("UPDATE digest_jobs SET status='suppressed',error='Unsubscribed' WHERE email_hash=? AND status='queued'").bind(person.email_hash)]);return page('Sale emails stopped.','Your watches are paused. You can change them in your browser.');}
+  return page('Stop sale emails?','This pauses sale alerts for your email address.','Stop sale emails');
  }
  if(path==='/unsubscribe'){
   const token=url.searchParams.get('token');if(!token||token.length>100)return new Response('Invalid link',{status:400});
@@ -51,33 +69,42 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(path.startsWith('/api/')){
   if(method!=='GET' && request.headers.get('Origin') && request.headers.get('Origin')!==url.origin)return json({error:'Origin mismatch'},403);
   if(path==='/api/dashboard'&&method==='GET'){
-   await initializeSources(env);
+   const existing=await env.DB.prepare('SELECT count(*) n FROM sources').first<{n:number}>();if(!existing?.n)await initializeSources(env);
    const [rows,sourceRows,last,watches]=await Promise.all([
-    env.DB.prepare('SELECT * FROM offers WHERE available=1 AND checked_at>=? ORDER BY checked_at DESC LIMIT 20000').bind(freshCutoff()).all<Offer>(),
+    env.DB.prepare('SELECT * FROM current_offers WHERE available=1 AND checked_at>=? ORDER BY checked_at DESC LIMIT 20000').bind(freshCutoff()).all<Offer>(),
     env.DB.prepare('SELECT * FROM sources ORDER BY CASE adapter WHEN \'planned\' THEN 1 ELSE 0 END,name').all(),
     env.DB.prepare("SELECT value FROM app_state WHERE key='last_scan'").first<{value:string}>(),
     env.DB.prepare('SELECT id,kind,query,category,fit,size_system,size,colour,budget,min_discount,active,email_verified,created_at FROM watches WHERE owner_id=? ORDER BY created_at DESC').bind(user).all<Watch>()
    ]);
-   return json({offers:groupOffers(rows.results),sources:sourceRows.results.map(s=>({...s,...shopLocation(String(s.id))})),lastScan:last?.value??null,watches:watches.results.map(w=>({...w,matchCount:rows.results.filter(o=>matches(w,o)).length})),emailReady:emailReady(env)});
+   const pipeline=await env.DB.prepare('SELECT id,status,started_at,completed_at FROM scan_runs ORDER BY started_at DESC LIMIT 1').first();
+   return json({offers:groupOffers(rows.results),sources:sourceRows.results.map(s=>({...s,...shopLocation(String(s.id))})),lastScan:last?.value??null,nextCheck:nextCheck(),pipeline,watches:watches.results.map(w=>({...w,matchCount:rows.results.filter(o=>matches(w,o)).length})),emailReady:emailReady(env)});
+  }
+  if(path==='/api/health'&&method==='GET'){
+   const run=await env.DB.prepare('SELECT id,status,started_at,completed_at,attempts FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<{id:string;status:string;completed_at:string|null}>();
+   const checks=run?(await env.DB.prepare('SELECT source_id,status,products,variants,rejected,details,completed_at FROM source_runs WHERE run_id=?').bind(run.id).all()).results:[];
+   const delivery=run?(await env.DB.prepare('SELECT status,count(*) count FROM digest_jobs WHERE run_id=? GROUP BY status').bind(run.id).all()).results:[];
+   return json({run,checks,delivery,nextCheck:nextCheck(),emailReady:emailReady(env),stale:run?.status==='failed'||!run?.completed_at||Date.now()-Date.parse(run.completed_at)>14*3600000});
   }
   if(!request.headers.get('Cookie')?.match(/(?:^|;\s*)brave_device=[a-f0-9]{64}(?:;|$)/))return json({error:'Please allow cookies for this site, then refresh to save your watch.'},401);
   if(method!=='GET'&&method!=='DELETE'&&!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'Please submit using the form'},415);
   if(path==='/api/watches'&&method==='POST'){
-   const data=await body(request);const kind=String(data.kind),query=String(data.query??'').trim(),category=String(data.category??'any'),fit=String(data.fit),size=String(data.size),budget=Number(data.budget),min=Number(data.min_discount??25),email=String(data.email??'').trim().toLowerCase();
-   if(!['category','brand','model'].includes(kind)||!categories.includes(category as typeof categories[number])||!['men','women','any'].includes(fit)||!/^\d{1,2}(\.5)?$/.test(size)||Number(size)<2||Number(size)>15||!Number.isFinite(budget)||budget<3000||budget>50000||!Number.isInteger(budget)||![20,25,30,40].includes(min)||query.length>100||(kind!=='category'&&!query))return json({error:'Check your shoe, size and budget'},400);
+   const data=await body(request);const kind=String(data.kind),query=String(data.query??'').trim(),category=String(data.category??'any'),fit=String(data.fit),size=String(data.size),budget=Number(data.budget),min=Number(data.min_discount??25),email=String(data.email??'').trim().toLowerCase(),sizeSystem=String(data.size_system??'UK');
+   if(sizeSystem!=='UK'&&!(kind==='model'&&approvedSources.some(s=>sizeSystem===`STORE:${s.id}`)))return json({error:'Choose a supported size system'},400);
+   if(!['category','brand','model'].includes(kind)||!categories.includes(category as typeof categories[number])||!['men','women','kids','any'].includes(fit)||!/^\d{1,2}(\.5)?$/.test(size)||Number(size)<(fit==='kids'?.5:2)||Number(size)>(fit==='kids'?13.5:15)||!Number.isFinite(budget)||budget<1500||budget>50000||!Number.isInteger(budget)||![20,25,30,40].includes(min)||query.length>100||(kind!=='category'&&!query))return json({error:'Check your shoe, size and budget'},400);
    if(data.consent!==true)return json({error:'Please agree to email alerts for this watch'},400);
    if(email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return json({error:'Enter a valid email address'},400);
+   const emailCount=await env.DB.prepare('SELECT count(*) n FROM watches WHERE email=?').bind(email).first<{n:number}>();if((emailCount?.n??0)>=50)return json({error:'This email has reached the watch limit. Remove an old watch first.'},400);
    const count=await env.DB.prepare('SELECT count(*) AS n FROM watches WHERE owner_id=?').bind(user).first<{n:number}>();if((count?.n??0)>=10)return json({error:'You can keep up to 10 watches. Remove one to add another.'},400);
-   if(!await rateLimit(env,request,'watch',10))return json({error:'Too many watches created. Please try again in an hour.'},429);
+   if(!await rateLimit(env,request,'watch',60))return json({error:'Too many watches created. Please try again in an hour.'},429);
    const id=crypto.randomUUID(),now=new Date().toISOString();
    const verified=await env.DB.prepare('SELECT id FROM watches WHERE owner_id=? AND email=? AND email_verified=1 LIMIT 1').bind(user,email).first();
-   await env.DB.prepare('INSERT INTO watches(id,owner_id,email,kind,query,category,fit,size_system,size,colour,budget,min_discount,created_at,consent_at,unsubscribe_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,user,email,kind,query,category,fit,'UK',String(Number(size)),String(data.colour??'').trim().slice(0,60),budget,min,now,now,crypto.randomUUID()).run();
-   if(verified){await env.DB.prepare('UPDATE watches SET email_verified=1 WHERE id=?').bind(id).run();return json({id,confirmation:'confirmed'},201);}
+   await env.DB.prepare('INSERT INTO watches(id,owner_id,email,kind,query,category,fit,size_system,size,colour,budget,min_discount,created_at,consent_at,unsubscribe_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,user,email,kind,query,category,fit,sizeSystem,String(Number(size)),String(data.colour??'').trim().slice(0,60),budget,min,now,now,crypto.randomUUID()).run();
+   if(verified){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE id=?').bind(id),env.DB.prepare('UPDATE subscribers SET unsubscribed=0 WHERE email_hash=?').bind(await digest(email))]);return json({id,confirmation:'confirmed'},201);}
    return json({id,confirmation:await sendConfirmation(env,{id,email})},201);
   }
   const match=path.match(/^\/api\/watches\/([a-f0-9-]{36})$/);
   if(match&&method==='DELETE'){await env.DB.prepare('DELETE FROM watches WHERE id=? AND owner_id=?').bind(match[1],user).run();return json({ok:true});}
-  if(match&&method==='PATCH'){const data=await body(request);if(typeof data.active!=='boolean')return json({error:'Invalid state'},400);await env.DB.prepare('UPDATE watches SET active=? WHERE id=? AND owner_id=?').bind(data.active?1:0,match[1],user).run();return json({ok:true});}
+  if(match&&method==='PATCH'){const data=await body(request);if(typeof data.active!=='boolean')return json({error:'Invalid state'},400);const watch=await env.DB.prepare('SELECT email,email_verified FROM watches WHERE id=? AND owner_id=?').bind(match[1],user).first<{email:string;email_verified:number}>();if(!watch)return json({error:'Watch not found'},404);const writes=[env.DB.prepare('UPDATE watches SET active=? WHERE id=? AND owner_id=?').bind(data.active?1:0,match[1],user)];if(data.active&&watch.email_verified)writes.push(env.DB.prepare('UPDATE subscribers SET unsubscribed=0 WHERE email_hash=?').bind(await digest(watch.email)));await env.DB.batch(writes);return json({ok:true});}
   const resend=path.match(/^\/api\/watches\/([a-f0-9-]{36})\/confirm$/);
   if(resend&&method==='POST'){const watch=await env.DB.prepare('SELECT id,email FROM watches WHERE id=? AND owner_id=? AND email_verified=0').bind(resend[1],user).first<Pick<Watch,'id'|'email'>>();if(!watch)return json({error:'Watch not found'},404);return json({confirmation:await sendConfirmation(env,watch)});}
   if(path==='/api/feedback'&&method==='POST'){
@@ -92,4 +119,4 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
  return new Response('Not found',{status:404});
 }
-function page(title:string,message:string,button?:string) {return new Response(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Shoe Watch</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">BRAVE RUNNERS / SHOE WATCH</a><h1>${title}</h1><p>${message}</p>${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}
+function page(title:string,message:string,button?:string) {return new Response(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Shoehoo</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">shoehoo.</a><h1>${title}</h1><p>${message}</p>${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}

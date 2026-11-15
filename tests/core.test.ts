@@ -3,7 +3,7 @@ import { Database } from 'bun:sqlite';
 import { handle } from '../src/server';
 import { matches, discount, type Env, type Offer, type Watch, type Statement } from '../src/types';
 import { normalize, sources } from '../src/sources';
-import { sendAlerts } from '../src/scan';
+import { sendConfirmation } from '../src/email';
 import { claim } from '../src/identity';
 import { shopLocation } from '../src/shops';
 const now=new Date().toISOString();
@@ -16,7 +16,7 @@ describe('Alert eligibility',()=>{
 });
 test('adult shoes survive negative merchandising tags; ambiguous sizes stay unconfirmed',()=>{
  const p={id:1,title:'Nike Road Running Shoes Mens',vendor:'Nike',product_type:'Running Shoe',tags:['e:kids-personalisation-available:false'],handle:'test',options:[{name:'Size',position:1}],images:[],variants:[{id:2,price:'80',compare_at_price:'100',available:true,option1:'9',option2:null,option3:null}]};
- const rows=normalize(p,sources[2],now);expect(rows).toHaveLength(1);expect(rows[0].size_system).toBe('unknown');expect(rows[0].price).toBe(8000);expect(normalize({...p,title:'Nike Junior Road Running Shoes'},sources[2],now)).toHaveLength(0);
+ const rows=normalize(p,sources[2],now);expect(rows).toHaveLength(1);expect(rows[0].size_system).toBe('unknown');expect(rows[0].price).toBe(8000);expect(normalize({...p,title:'Nike Junior Road Running Shoes'},sources[2],now)[0].fit).toBe('kids');
 });
 const connections:Database[]=[];afterEach(()=>{connections.splice(0).forEach(d=>d.close());});
 async function database(){const sqlite=new Database(':memory:');connections.push(sqlite);sqlite.exec('PRAGMA foreign_keys=ON');const journal=await Bun.file('drizzle/meta/_journal.json').json();for(const {tag} of journal.entries)sqlite.exec(await Bun.file(`drizzle/${tag}.sql`).text());function stmt(sql:string,args:unknown[]=[]):Statement{return {bind:(...v)=>stmt(sql,v),all:async<T>()=>({results:sqlite.query(sql).all(...args as any[]) as T[]}),first:async<T>()=>(sqlite.query(sql).get(...args as any[])??null) as T|null,run:async()=>sqlite.query(sql).run(...args as any[])}}return {DB:{prepare:(s:string)=>stmt(s),batch:async(s:Statement[])=>{for(const q of s)await q.run();return [];}},SITE_ACCESS:'public'} as Env;}
@@ -62,16 +62,17 @@ test('a confirmation GET cannot opt someone in; POST verifies only that deviceâ€
  const original=globalThis.fetch;const messages:Record<string,string>[]=[];
  globalThis.fetch=(async (_url:unknown,init:RequestInit)=>{messages.push(JSON.parse(String(init.body)));return Response.json({id:'test-only'});}) as typeof fetch;
  try{
-  const result=await sendAlerts(env);expect(result.sent).toBe(0);expect(messages).toHaveLength(1);expect(messages[0].subject).toBe('Confirm your Brave Runners shoe alert');
+  const result=await sendConfirmation(env,{id:first.id,email:watchInput.email});expect(result).toBe('sent');expect(messages).toHaveLength(1);expect(messages[0].subject).toBe('Confirm your Shoehoo alert');
   const token=messages[0].text.match(/confirm-email\?token=([a-f0-9]{64})/)![1];
   await handle(request(`/confirm-email?token=${token}`),env,'');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(0);
   await handle(request(`/confirm-email?token=${token}`,'POST'),env,'');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(1);
   expect((await env.DB.prepare('SELECT email_verified FROM watches WHERE id=?').bind(first.id).first<{email_verified:number}>())!.email_verified).toBe(1);
  }finally{globalThis.fetch=original;}
 });
-test('public catalogue updater is atomically bounded and cannot be called repeatedly',async()=>{
- const env=await database();expect((await Promise.all(Array.from({length:6},()=>claim(env,'one-claim')))).filter(Boolean)).toHaveLength(1);
+test('scheduler requires its own secret, and failures admit only three attempts',async()=>{
+ const env=await database();env.CRON_SECRET='test-only';expect((await Promise.all(Array.from({length:6},()=>claim(env,'one-claim')))).filter(Boolean)).toHaveLength(1);
+ expect((await handle(request('/api/internal/scan','POST'),env,'')).status).toBe(401);
  const original=globalThis.fetch;let calls=0;
- globalThis.fetch=(async ()=>{calls++;return new Response('Temporary source failure',{status:503});}) as unknown as typeof fetch;
- try{const first=await (await handle(request('/api/internal/scan','POST'),env,'')).json();expect(first.reports).toHaveLength(3);expect(calls).toBe(3);const second=await (await handle(request('/api/internal/scan','POST'),env,'')).json();expect(second.skipped).toBe(true);expect(calls).toBe(3);}finally{globalThis.fetch=original;}
+ globalThis.fetch=(async()=>{calls++;return new Response('Temporary source failure',{status:503});}) as unknown as typeof fetch;
+ try{for(let n=0;n<3;n++){const r=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(r.status).toBe('failed');}expect(calls).toBe(9);const last=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(last.skipped).toBe(true);expect(calls).toBe(9);}finally{globalThis.fetch=original;}
 });

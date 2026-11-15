@@ -1,93 +1,75 @@
-# Brave Runners · Shoe Watch
+# Shoehoo
 
-**Running-shoe deals, in your size. No account needed.** Built with Bun 1.4.4 and TypeScript 7.0.2; hosted on Sites with a real D1 database.
+**Nice shoes. Nicer prices.** A public, account-free running-shoe deal watcher for adults and kids. Working name; the existing deployment URL is retained.
 
-## The second-pass journey
+The third pass replaces the green club theme with white, charcoal, cobalt and orange, removes Brave Runners branding, adds kids' fits, and introduces a deterministic checking/digest pipeline.
 
-1. Browse deals. Fit, UK size and shop region are the three visible filters.
-2. Buy at the clearly named shop, or select **Watch this shoe**.
-3. Choose size and budget, then enter an email. No ChatGPT login or password.
+## Live behavior
 
-A browser-specific watchlist supports pause, resume, removal and feedback. Watches do not automatically transfer to another device; clearing cookies starts a fresh list. That limit is stated beside the watchlist.
+- Real catalogue collection: Amphibian King, The Run Hub and Elverys, including Elverys boys'/girls' running footwear. Five other requested shops remain visibly planned.
+- Explicit 🇮🇪 / 🇪🇺 seller labels, shop-specific links and exact variant URLs.
+- Watches for a model, brand or category, fit/age group, size and budget. No ChatGPT sign-in. A private random HttpOnly device cookie scopes watch management.
+- Unlabelled shop sizes are never silently converted to UK. “Watch this shoe” can use that shop's explicitly labelled listed-size scheme for the selected model/source.
+- Source snapshots are validated before publication. Fresh product/page validation precedes sale digests; failures suppress alerts instead of trusting old data.
+- Verified emails receive one combined HTML/plain-text digest per slot, up to two sale digests/day, with up to six shoes and direct retailer links. Actual delivery still needs a verified sender.
+- `/email-preview` shows the HTML design using clearly labelled preview content. `/api/health` shows non-personal run/source/outbox status.
 
-The redesign removes the large illustration, promotional panels, duplicate explanatory text and secondary navigation. Text and controls are larger: body/input text 17px, important mobile actions 17px, and supporting text usually 14–16px. Buttons have at least 44px targets, form controls have visible labels and focus states, and the mobile deal list uses a single readable column. Additional filters and source diagnostics are progressively disclosed.
+Read the [implemented reliability and scaling plan](docs/reliable-checks.md) for exact checks, guarantees, limitations, quotas, retry rules and upgrade triggers.
 
-Every deal prominently shows seller name, a flag, and a **Shop at [seller]** button. MisterRunning, Running Warehouse Europe and 21RUN use 🇪🇺 **EU shop**. Amphibian King, The Run Hub, Elverys, Life Style Sports and the Irish Sports Direct storefront use 🇮🇪 **Irish shop**. These labels describe the storefront region, not a guarantee about dispatch origin, shipping speed or arrival dates. Actual delivery dates remain the retailer's responsibility.
+## Local development
 
-## Data and matching
-
-- Real size-level collection: Amphibian King's running collections, The Run Hub's footwear collection, and a selected Elverys running-sale collection.
-- Five additional retailers remain visibly **Coming later** until individual adapters are implemented.
-- Each collection crawl is capped at 500 products. Truncation and source failures are shown under **Shops & last check**. An error never wipes a successful snapshot.
-- Explicit UK size labels at Amphibian King are supported. Other shops' unlabelled numeric sizes remain unconfirmed and are excluded from exact UK-size matches. No EU/US conversion is guessed.
-- Shoe, brand or category watches match exact fit, size system, size, budget and a minimum retailer markdown. The simplified UI uses 25% as the alert threshold; it is not another setup decision. Prices exclude delivery; any colour is the default.
-- Offer cards use size-specific variant links when a size filter is selected.
-- “Off” means below the shop's reference price, not a verified market-wide discount. Coupons, multi-buy offers and delivered-price comparisons are not yet counted.
-- Products older than 30 hours are excluded. Changed-price history is kept for 90 days.
-
-## Account-free privacy and email
-
-`GET /api/dashboard` sets a random 256-bit `brave_device` cookie. It is HttpOnly, SameSite=Lax, host-only, and Secure on HTTPS. Only its SHA-256 digest is used as the database owner identifier. The app does not use ChatGPT identity headers. Each watch operation is scoped by the device identifier, and the public dashboard never returns emails, consent metadata, ownership identifiers or unsubscribe tokens.
-
-Emails are user-entered and **unverified by default**. A confirmation message, when a sender is configured, provides a random 24-hour link whose hash is stored in `email_confirmations`. GET displays a confirmation page; POST explicitly verifies watches for that email on that device, preventing email scanners from subscribing somebody. New watches for an already-confirmed email on the same device inherit that confirmation. Another device does not inherit it.
-
-`sendAlerts` selects only active, verified watches. Confirmation delivery is capped at one email per address per day, across devices. Form writes are limited per IP and per device, have origin/content-type checks, and watches require consent. A person who did not request a confirmation can ignore it and receives no sale emails.
-
-Actual email delivery still requires server-only `RESEND_API_KEY`, verified `EMAIL_FROM` and `APP_URL`. Without them, watches work and the interface clearly says email delivery is not ready. No sends are simulated. Sale emails are capped at one per watch per day, suppress duplicate prices, use provider idempotency, and support confirmed unsubscribe/removal with cascading alert-history deletion.
-
-## Run and verify
+Bun 1.4.4 and TypeScript 7.0.2 are pinned. The browser uses plain TypeScript/CSS. Local handlers run with Bun/native SQLite; Sites hosts the same Request/Response handlers in a Worker with D1.
 
 ```sh
-bun install
+bun install --frozen-lockfile
+# Set a local CRON_SECRET in your untracked .env, then:
 bun run dev
-# In another terminal:
+# In another terminal with the same secret and APP_URL:
 bun run scan
-```
-
-Open http://127.0.0.1:3000. Local storage is `.data/brave.sqlite`; the Bun server uses the same guest-cookie behavior as production. SQL migrations are applied transactionally in journal order. Secrets and runtime data are ignored by Git.
-
-```sh
 bun test
 bun run check
 bun run build
-BUN_CHROME_PATH=/absolute/path/to/chrome bun scripts/browser-check.ts
 ```
 
-Browser verification creates, reloads, pauses and removes a test watch. Use it against development data. It checks desktop/mobile overflow, the no-account form flow and readable mobile controls, and saves ignored screenshots.
+The local server binds to 127.0.0.1 and stores `.data/brave.sqlite`. Ordered SQL migrations are applied transactionally from `drizzle/meta/_journal.json`; applied migrations are immutable. Source credentials, `.env`, database files and screenshots are ignored by Git.
 
-## Hosting and the existing schedule
+Browser checks use an installed Chrome-family executable:
 
-The browser uses plain TypeScript and CSS, without a UI framework or browser dependencies. Standard Request/Response handlers run in Bun with native SQLite locally, and in a Cloudflare Worker with D1 on Sites. Bun is the development/build runtime; the hosted Worker is not running Bun.
+```sh
+APP_URL=http://127.0.0.1:3000 BUN_CHROME_PATH=/path/to/chrome bun scripts/browser-check.ts
+```
 
-The tracked `.openai/hosting.json` retains the existing Site ID and `DB` binding. Sites applies the append-only `drizzle/` migrations before publishing. Build output is `dist/server/index.js` with its HTML, CSS and client script bundled. The public Site audience is managed through Sites; browsing and writing guest watches do not require ChatGPT sign-in.
+This creates, reloads, pauses and deletes a test watch; use development data. Unit/behavior tests do not call a real email service.
 
-The linked 08:00/20:00 Europe/Dublin automation remains the scheduler. Its existing `POST /api/internal/scan` writer still works after public access is enabled. This endpoint accepts no URLs, recipients, messages or user instructions; it only refreshes the allowlisted public catalogue and invokes the consent/verification-gated alert logic. An atomic database claim allows at most one request in each 00:00–12:00 and 12:00–24:00 UTC window, plus the existing overlap lease. Repeated requests return `skipped`, so visitors cannot turn the endpoint into an unrestricted crawler or email sender. A visitor could request a due update before the scheduled task; that task will then skip the same already-requested window.
+## Code-only scheduler
 
-A failed scan consumes its time window; individual source errors are recorded and another attempt occurs in the next window. To verify the updater, POST once and GET `/api/dashboard` to read persisted timestamps/source status. Never claim a scheduled run occurred just because the schedule was saved. The old private-only `SITE_ACCESS` and `SCAN_SECRET` settings are no longer used; no admin or runtime configuration API is exposed.
+The private GitHub repository `georgesterpu/shoehoo-jobs` contains this source, parser/build CI and the deterministic scheduler. `.github/workflows/shoehoo-checks.yml` targets 08:00 and 20:00 in `Europe/Dublin`, using ordinary code from `scripts/run-jobs.mjs`. A 15-minute catch-up trigger reuses the same slot if needed, without repeating a completed scan or digest. It has no language model or agent dependency. `CRON_SECRET` is a runtime/Actions secret; `APP_URL` is an Actions variable. The app remains public; the writer is authenticated.
 
-The app makes no LLM calls. The scheduling service has its own account entitlements. No Vercel account, paid subscription, domain change or email credential is created by this app. `ganuary.ie` has not been connected.
+The job collects all shops once, retries failed sources within bounds, plans indexed matches in recipient pages, drains validated digests, and reads back health. The old ChatGPT automation must be turned off separately if still enabled; available Sites tools expose its state but cannot edit/disable it. Its former unauthenticated writer call is rejected by the new endpoint.
 
-## Tables
+GitHub scheduling can be delayed, so the app displays actual timestamps rather than promising exact-on-the-minute delivery. See the reliability plan for the native-cron/queue upgrade and missed-run monitoring.
 
-| Table | Purpose |
+## Runtime configuration
+
+| Key | Purpose |
 | --- | --- |
-| `sources` | Source health, coverage and observation time |
-| `offers` | Stable retailer variant, size, stock, fit, colour and integer-cent prices |
-| `price_history` | Observed price changes |
-| `watches` | Private device ownership, contact, consent, criteria and confirmation state |
-| `email_confirmations` | Hashed, expiring email confirmation capabilities |
-| `notifications` | Delivery attempts, idempotent identity and send status |
-| `feedback` | Private suggestions and issues |
-| `app_state` | Scan lease, bounded update windows, rate limits and last scan |
+| `APP_URL` | Public origin used for confirmation/unsubscribe links |
+| `CRON_SECRET` | Strong shared secret for the code-only scheduler |
+| `RESEND_API_KEY` | Server-only email provider credential |
+| `EMAIL_FROM` | Verified sender address/domain |
+| `DAILY_EMAIL_LIMIT` | Hard global delivery-attempt budget; default 100 |
 
-## Next useful work
+Email credentials are not provisioned or fabricated. With no sender, watches save and the UI accurately reports email delivery unavailable. `ganuary.ie` has not been changed.
 
-Configure a verified sender; confirm the other shops' sizing conventions; add one requested retailer adapter at a time. Learn from 5–10 club members whether alerts lead to useful purchases. Only add market-price claims after comparing the same model generation, fit, width and size across shops, with verified delivery costs and promotion eligibility.
+## Source map
 
-## References
+- `src/sources.ts`: retailer contracts, strict normalization, kids/adult identity
+- `src/scan.ts`: run leases/retries, atomic source snapshots, retention
+- `src/validation.ts`: page/variant preflight and shared freshness cache
+- `src/outbox.ts`: indexed matching, recipient digests, leases and idempotent retries
+- `src/email-template.ts`: escaped, readable HTML and plain-text templates
+- `src/schedule.ts`: Dublin calendar slots and daylight-saving handling
+- `src/server.ts`: public app, guest watch privacy, confirmation and protected writers
+- `tests/` and `fixtures/`: behavior tests and real retailer contract examples
 
-- [Bun 1.4](https://bun.com/blog/bun-v1.4) and [TypeScript 7.0](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)
-- [Bun WebView](https://bun.com/docs/runtime/webview)
-- [Resend email API](https://resend.com/docs/api-reference/emails/send-email) and [idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys)
-
-Product data and images come from the linked retailers. Review source access rules and terms again before expanding collection.
+Markdown percentages compare with retailer reference prices and exclude delivery. Coupons and below-market claims are not implemented. Product data/images belong to the linked retailers; review access rules and terms before expanding collection.

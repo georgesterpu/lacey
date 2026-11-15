@@ -1,0 +1,25 @@
+name: Shoehoo checks and digests
+on:
+  schedule:
+    - cron: '0 8,20 * * *'
+      timezone: 'Europe/Dublin'
+    # A missed primary event can be caught without repeating a completed scan or digest.
+    - cron: '15 8,20 * * *'
+      timezone: 'Europe/Dublin'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shoehoo-checks
+  cancel-in-progress: false
+jobs:
+  refresh-and-deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Collect, validate, match, deliver and verify
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node scripts/run-jobs.mjs
