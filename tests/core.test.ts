@@ -11,7 +11,7 @@ const offer:Offer={id:'amphibian:1',source_id:'amphibian',product_id:'p1',title:
 const watch:Watch={id:'w1',owner_id:'a',email:'a@example.test',kind:'model',query:'Kayano 31',category:'any',fit:'men',size_system:'UK',size:'9',colour:'',budget:12000,min_discount:25,active:1,created_at:now,consent_at:now};
 describe('Alert eligibility',()=>{
  test('requires matching model generation, in-stock size, fit, freshness and budget',()=>{expect(matches(watch,offer)).toBe(true);for(const change of [{title:'ASICS Gel Kayano 32 Mens'},{size:'9.5'},{fit:'women'},{size_system:'unknown'},{available:0},{checked_at:'2020-01-01T00:00:00Z'},{price:13000},{reference_price:null}])expect(matches(watch,{...offer,...change})).toBe(false);});
- test('does not mistake partial model names or small markdowns for a match',()=>{expect(matches({...watch,query:'Kayano 3'},offer)).toBe(false);expect(discount({...offer,reference_price:10000})).toBe(0);expect(matches({...watch,min_discount:40},offer)).toBe(false);});
+ test('does not mistake partial model names or small markdowns for a match',()=>{expect(matches({...watch,query:'Kayano 3'},offer)).toBe(false);expect(discount({...offer,reference_price:10000})).toBe(0);expect(discount({...offer,price:8000,reference_price:10000})).toBe(20);expect(matches({...watch,min_discount:40},offer)).toBe(false);});
  test('broad watches match only the selected category or brand',()=>{expect(matches({...watch,kind:'category',category:'stability'},offer)).toBe(true);expect(matches({...watch,kind:'category',category:'trail'},offer)).toBe(false);expect(matches({...watch,kind:'brand',query:'hoka'},offer)).toBe(false);});
 });
 test('adult shoes survive negative merchandising tags; ambiguous sizes stay unconfirmed',()=>{

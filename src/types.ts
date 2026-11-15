@@ -7,7 +7,7 @@ export interface Watch { id:string; owner_id:string; email:string; kind:string; 
 export const categories = ['any','daily','stability','race','trail'] as const;
 export const freshCutoff = () => new Date(Date.now()-30*60*60*1000).toISOString();
 export const money = (cents:number) => new Intl.NumberFormat('en-IE',{style:'currency',currency:'EUR',maximumFractionDigits: cents%100 ? 2:0}).format(cents/100);
-export function discount(o:Pick<Offer,'price'|'reference_price'>) { return o.reference_price && o.reference_price>o.price ? Math.floor((1-o.price/o.reference_price)*100):0; }
+export function discount(o:Pick<Offer,'price'|'reference_price'>) { return o.reference_price && o.reference_price>o.price ? Math.floor((o.reference_price-o.price)*100/o.reference_price):0; }
 export function matches(w:Watch,o:Offer) {
   const sizeSystem=w.size_system===o.size_system||(w.kind==='model'&&w.size_system===`STORE:${o.source_id}`&&o.size_system==='unknown');
   if(!w.active || !o.available || o.checked_at<freshCutoff() || !sizeSystem || w.size!==o.size || o.price>w.budget || discount(o)<w.min_discount) return false;
