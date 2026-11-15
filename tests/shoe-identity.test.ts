@@ -15,3 +15,4 @@ test('one card keeps each size’s own cheapest price and variant link; unknown 
  expect(shoeCards([shoe,{...cheap,size_system:'unknown'}])[0].options).toHaveLength(2);
  const unknown=[{...shoe,size_system:'unknown'},{...cheap,size_system:'unknown'}];expect(shoeCards(unknown)[0].options.map(o=>o.id)).toEqual(shoeCards([...unknown].reverse())[0].options.map(o=>o.id));
 });
+test('Gel-Kayano punctuation merges across shops while model years and widths do not',()=>{const kayano={...shoe,title:'ASICS Gel-Kayano 33 Men’s Running Shoes'};expect(shoeIdentity(kayano).key).toBe(shoeIdentity({...kayano,title:'ASICS Gel Kayano 33 Men',source_id:'21run',product_id:'other'}).key);for(const title of ['ASICS Gel Kayano 32 Men','ASICS Gel Kayano 33 Wide Men','ASICS Gel Kayano 33 Lite-Show Men'])expect(shoeIdentity({...kayano,title}).key).not.toBe(shoeIdentity(kayano).key);});

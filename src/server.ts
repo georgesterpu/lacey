@@ -1,6 +1,7 @@
 import type { Env, Offer, Watch } from './types';
 import { categories, discount, freshCutoff, matches } from './types';
 import { initializeSources, scan } from './scan';
+import {advanceCatalogue} from './catalogue-job';
 import { device, digest, rateLimit } from './identity';
 import { emailReady, sendConfirmation } from './email';
 import { shopFlag, shopLocation } from './shops';
@@ -41,6 +42,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   if(!env.CRON_SECRET||request.headers.get('Authorization')!==`Bearer ${env.CRON_SECRET}`)return json({error:'Scheduler authorization required. This endpoint is called by the deterministic scheduler, not a ChatGPT task.'},401);
   if(method!=='POST')return json({error:'Use POST'},405);
   if(path==='/api/internal/scan')return json(await scan(env));
+  if(path==='/api/internal/catalogue'){const input=await body(request),runId=String(input.runId??'');if(!/^[a-f0-9-]{36}$/.test(runId))return json({error:'Invalid run'},400);return json(await advanceCatalogue(env,runId));}
   if(path==='/api/internal/dispatch'){
    const input=await body(request),runId=String(input.runId??'');if(!/^[a-f0-9-]{36}$/.test(runId))return json({error:'Invalid run'},400);
    const plan=await planDigests(env,runId),delivery=await dispatchDigests(env,runId);
@@ -139,7 +141,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   }
   return json({error:'Not found'},404);
  }
- if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com https://img.runningwarehouse.eu https://www.lifestylesports.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
+ if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com https://images.21run.com https://img.runningwarehouse.eu https://www.lifestylesports.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
  return new Response('Not found',{status:404});
 }
 function page(title:string,message:string,button?:string,extra='') {return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><title>Lacey</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">lacey 😊</a><h1>${title}</h1><p>${message}</p>${extra}${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin'}});}

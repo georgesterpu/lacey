@@ -1,4 +1,3 @@
-import {collectTwentyOne} from './twentyone';
 import {collectLifestyle} from './lifestyle';
 import {collectWarehouse} from './warehouse';
 import type { Offer } from './types';
@@ -41,7 +40,6 @@ export function normalize(p:Product,source:typeof sources[number],now:string):Of
  });
 }
 export async function collect(source:typeof sources[number],now:string) {
- if(source.adapter==='twentyone')return collectTwentyOne(now);
  if(source.adapter==='lifestyle')return collectLifestyle(now);
  if(source.adapter==='warehouse')return collectWarehouse(now);
  const result=new Map<string,Offer>();let complete=true,rejected=0,seen=0,held=0;

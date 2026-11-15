@@ -53,8 +53,8 @@ function renderWatches(){
 function renderSources(){
  $('#sources').innerHTML=data!.sources.map(s=>{
   const stale=s.last_success&&Date.now()-Date.parse(s.last_success)>30*3600000;
-  const status=s.adapter==='planned'?'planned':stale?'stale':s.status;
-  const labels:Record<string,string>={live:'Checked',planned:'Not connected',error:'Check failed',partial:'Limited coverage',stale:'Check overdue'};
+  const status=s.error?.startsWith('Updating catalogue:')?'scanning':s.adapter==='planned'?'planned':stale?'stale':s.status;
+  const labels:Record<string,string>={scanning:'Updating catalogue',live:'Checked',planned:'Not connected',error:'Check failed',partial:'Limited coverage',stale:'Check overdue'};
   return `<article class="source-card">${shopIdentity(s)}<div class="source-bottom"><span class="source-status ${status==='live'?'':status==='planned'?'planned':'partial'}">${labels[status]??'Not checked yet'}</span><span>${s.last_success?`${s.product_count} shoes · ${esc(ago(s.last_success))}`:'Not connected'}</span></div>${s.error?`<details><summary>Check details</summary><p>${esc(s.error)}</p></details>`:''}<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">Visit ${esc(s.name)} ↗</a></article>`;
  }).join('');
 }

@@ -12,6 +12,16 @@ for(let attempt=0;attempt<3;attempt++){
  await sleep((attempt+1)*15000);
 }
 if(!scan||!['complete','partial'].includes(scan.status))throw new Error('No completed source scan; email dispatch withheld');
+// The full catalogue advances in checkpointed batches, independently of request
+// duration. No arbitrary shoe/size cap; a retry resumes the same scan and cursor.
+let catalogueDone=false,catalogueFailed=false;
+for(let step=0;step<2000;step++){
+ const result=await post('/api/internal/catalogue',{runId:scan.runId});
+ console.log(JSON.stringify({stage:'catalogue',...result}));
+ if(result.done){catalogueDone=true;catalogueFailed=result.status==='failed';break;}
+ await sleep(result.status==='busy'?5000:200);
+}
+if(!catalogueDone)throw new Error('Catalogue time budget exhausted; checkpoint retained');
 let complete=false;
 for(let page=0;page<200;page++){
  const result=await post('/api/internal/dispatch',{runId:scan.runId});
@@ -31,4 +41,4 @@ if(!backup.ok)throw new Error(`Encrypted backup: HTTP ${backup.status}`);
 const bytes=new Uint8Array(await backup.arrayBuffer());if(new TextDecoder().decode(bytes.slice(0,8))!=='LACEY01\n')throw new Error('Invalid encrypted backup response');
 await mkdir('.data/backups',{recursive:true});await writeFile(`.data/backups/lacey-${scan.runId}.enc`,bytes,{mode:0o600});
 console.log(JSON.stringify({stage:'backed_up',bytes:bytes.byteLength}));
-if(scan.status==='partial')throw new Error('A shop failed validation; healthy sources were processed. Inspect source checks.');
+if(scan.status==='partial'||catalogueFailed)throw new Error('A shop failed validation; healthy sources were processed. Inspect source checks.');
