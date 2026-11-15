@@ -2,7 +2,8 @@ import type { Env, Offer } from './types';
 import { collect, sources } from './sources';
 import { scheduleSlot } from './schedule';
 import { cleanup } from './retention';
-export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter').bind(s.id,s.name,s.url,s.adapter)));}
+const connectionNotes:Record<string,string>={misterrunning:'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.', '21run':'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.',sportsdirect:'Connection test timed out; automatic price/size checks are not connected.'};
+export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter,error) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter,error=CASE WHEN excluded.adapter=\'planned\' THEN excluded.error ELSE sources.error END').bind(s.id,s.name,s.url,s.adapter,connectionNotes[s.id]??null)));}
 export async function scan(env:Env) {
  await initializeSources(env);const now=new Date().toISOString(),slot=scheduleSlot(),id=crypto.randomUUID();
  // Retries reuse the same run and snapshot namespace; only a stale lease or an
@@ -10,6 +11,7 @@ export async function scan(env:Env) {
  await env.DB.prepare("INSERT INTO scan_runs(id,slot_key,status,started_at,heartbeat_at) VALUES(?,?,'running',?,?) ON CONFLICT(slot_key) DO NOTHING").bind(id,slot,now,now).run();
  let run=await env.DB.prepare('SELECT id,status,attempts,heartbeat_at FROM scan_runs WHERE slot_key=?').bind(slot).first<{id:string;status:string;attempts:number;heartbeat_at:string}>();
  if(run!.id!==id){
+  if(run!.status==='complete'&&run!.attempts<3){const done=(await env.DB.prepare('SELECT source_id FROM source_runs WHERE run_id=?').bind(run!.id).all<{source_id:string}>()).results;const added=sources.some(s=>s.adapter!=='planned'&&!done.some(d=>d.source_id===s.id));if(added){await env.DB.prepare("UPDATE scan_runs SET status='partial' WHERE id=? AND status='complete'").bind(run!.id).run();run!.status='partial';}}
   const leaseExpired=run!.heartbeat_at<new Date(Date.now()-10*60000).toISOString();
   if(run!.attempts>=3||!((['failed','partial'].includes(run!.status))||(run!.status==='running'&&leaseExpired))){if(run!.status!=='running')await cleanup(env);return {runId:run!.id,status:run!.status,skipped:true};}
   const lease=crypto.randomUUID();await env.DB.prepare("UPDATE scan_runs SET status='running',attempts=attempts+1,heartbeat_at=? WHERE id=? AND attempts<3 AND (status IN('failed','partial') OR (status='running' AND heartbeat_at<?))").bind(`${now}|${lease}`,run!.id,new Date(Date.now()-10*60000).toISOString()).run();
@@ -30,8 +32,8 @@ export async function scan(env:Env) {
     // Publish the entire source in one atomic transaction. Failed/incomplete writes
     // never change the live pointer, so readers keep the previous good snapshot.
     await env.DB.batch([
-     env.DB.prepare('INSERT INTO source_runs(run_id,source_id,status,products,variants,rejected,details,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status=excluded.status,products=excluded.products,variants=excluded.variants,rejected=excluded.rejected,details=excluded.details,completed_at=excluded.completed_at').bind(runId,source.id,complete?'complete':'partial',count,offers.length,rejected,[!complete?'First 500 products per collection':'',held?`${held} excluded or unsupported products`:''].filter(Boolean).join('; ')||null,new Date().toISOString()),
-     env.DB.prepare('UPDATE sources SET live_snapshot_id=?,status=?,last_success=?,product_count=?,error=? WHERE id=?').bind(snapshot,complete?'live':'partial',now,count,complete?null:'Coverage limited to 500 products per collection',source.id)
+     env.DB.prepare('INSERT INTO source_runs(run_id,source_id,status,products,variants,rejected,details,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status=excluded.status,products=excluded.products,variants=excluded.variants,rejected=excluded.rejected,details=excluded.details,completed_at=excluded.completed_at').bind(runId,source.id,complete?'complete':'partial',count,offers.length,rejected,[!complete?(source.adapter==='lifestyle'?'First 5 sale products per department; up to 10 listed sizes':source.adapter==='warehouse'?'First 24 product pages per department':'First 500 products per collection'):'',held?`${held} excluded or unsupported products`:''].filter(Boolean).join('; ')||null,new Date().toISOString()),
+     env.DB.prepare('UPDATE sources SET live_snapshot_id=?,status=?,last_success=?,product_count=?,error=? WHERE id=?').bind(snapshot,complete?'live':'partial',now,count,complete?null:(source.adapter==='lifestyle'?'Coverage limited to 5 sale products per department and 10 listed sizes':source.adapter==='warehouse'?'Coverage limited to 24 verified product pages per department':'Coverage limited to 500 products per collection'),source.id)
     ]);
     await env.DB.prepare('INSERT INTO price_history(offer_id,price,observed_at) SELECT id,price,checked_at FROM offer_snapshots s WHERE snapshot_id=? AND COALESCE((SELECT price FROM price_history h WHERE h.offer_id=s.id ORDER BY observed_at DESC LIMIT 1),-1)!=s.price ON CONFLICT(offer_id,observed_at) DO NOTHING').bind(snapshot).run();
     reports.push({source:source.name,status:complete?'complete':'partial',products:count,variants:offers.length,rejected,held});

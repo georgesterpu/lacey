@@ -83,3 +83,9 @@ Every completed or failed scan runs bounded cleanup; catch-up calls for already-
 ## Vercel production and recoverable data
 
 See [the production runbook](docs/deployment-handoff.md) for the project, isolated production/preview Turso databases, immutable checksummed migrations, encrypted backups, tested empty-database restoration, domain DNS records and email setup. Builds never reset the database. `bun run build:vercel` builds the Bun app; `bun run db:migrate` performs explicit, backed-up schema changes. Preview cannot send emails.
+
+## Retailer connection audit (November 2026)
+
+Five adapters are implemented: Amphibian King, The Run Hub, Elverys, Running Warehouse Europe and Life Style Sports. Warehouse checks Ireland-selected VAT-inclusive prices and explicit UK stock rows; its first 24 product pages per adult department are covered. Lifestyle checks the first five sale products per department and up to ten numeric size choices, verifies the selected variant, and labels its unconfirmed units as shop-specific. Both recheck current product data before alerts. Individual shops are selectable in the Shop filter. Existing Shopify adapters remain bounded at 500 products per collection; limited coverage is not a failed connection.
+
+21RUN and MisterRunning catalogues were accessible but direct product verification returned HTTP 403. Sports Direct requests timed out. These remain explicitly Not connected, with reasons; no alerts pretend they were searched successfully. Expanding them requires an approved, stable product/stock data path. GitHub integration to Vercel was successfully connected after repository access was granted. Main-branch auto-production deployment remains disabled pending explicit tested promotion.

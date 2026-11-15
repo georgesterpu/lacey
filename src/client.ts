@@ -21,7 +21,7 @@ function tab(name:string){for(const n of ['finds','watches'])$(`#panel-${n}`).hi
 function value(id:string){return $<HTMLSelectElement>(`#${id}`).value;}
 function filtered(){
  const fit=value('filter-fit'),size=value('filter-size'),brand=value('filter-brand'),category=value('filter-category'),region=value('filter-region'),sort=value('sort');
- const eligible=(data?.offers??[]).filter(o=>o.discount>=20&&(category==='any'||o.category===category)&&(fit==='any'||o.fit===fit||o.fit==='unisex')&&(size==='any'||o.size_system==='UK'&&o.sizes.includes(size))&&(brand==='any'||o.brand===brand)&&(region==='any'||data!.sources.find(s=>s.id===o.source_id)?.region===region));
+ const eligible=(data?.offers??[]).filter(o=>o.discount>=20&&(category==='any'||o.category===category)&&(fit==='any'||o.fit===fit||o.fit==='unisex')&&(size==='any'||o.size_system==='UK'&&o.sizes.includes(size))&&(brand==='any'||o.brand===brand)&&(region==='any'||(region.startsWith('shop:')?o.source_id===region.slice(5):data!.sources.find(s=>s.id===o.source_id)?.region===region)));
  const models=new Map<string,Group>();
  // Filter sizes and shops before choosing a winner, so the displayed price and
  // purchase link always belong to the selected size/region.
@@ -42,7 +42,7 @@ function renderProducts(){
   const link=size!=='any'?(o.sizeUrls?.[size]??o.url):o.url;
   const comparison=o.comparisons?.length?`<details class="shop-comparison"><summary>Other shops (${o.comparisons.length})</summary>${o.comparisons.map(v=>{const s=data!.sources.find(s=>s.id===v.source_id)!;return `<a href="${esc(size!=='any'?(v.sizeUrls[size]??v.url):v.url)}" target="_blank" rel="noopener noreferrer"><span>${shopFlag(s.id)} ${esc(s.name)}</span><strong>${euro(v.price)} ↗</strong><small>${esc(v.size_system==='unknown'?'Shop size':v.size_system)} ${esc(size!=='any'?size:v.sizes.join(' · '))}</small></a>`;}).join('')}</details>`:'';
   return `<article class="product-card"><div class="product-photo"><span class="discount-tag">${o.discount}% off</span>${o.image?`<img src="${esc(o.image)}" alt="${esc(o.title)}${o.colour?' in '+esc(o.colour):''}" loading="lazy" width="350" height="230">`:''}</div><div class="product-content">${shopIdentity(shop)}<h3>${esc(shoeTitle(o))}</h3><p class="shoe-fit">${esc(fitNames[o.fit])}</p><p class="product-price">${euro(o.price)} <del aria-label="Shop’s reference price ${euro(o.reference_price!)}">${euro(o.reference_price!)}</del></p><div class="product-sizes">${esc(sizeLabel)}</div><div class="product-buttons"><a class="button button-dark" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Shop at ${esc(shop.name)} <span aria-hidden="true">↗</span></a><button class="watch-shoe" data-watch-offer="${esc(o.id)}" aria-label="Watch ${esc(o.title)} for a deal">Watch this shoe</button></div>${comparison}</div></article>`;
- }).join(''):`<div class="empty-state"><h3>${data?.lastScan?'No matches. Yet 👀':'The first check is on its way.'}</h3><p>${data?.lastScan?'Try another filter, or save a watch. We’ll keep our eyes peeled.':'Save your size and we’ll look for a deal.'}</p><button class="button button-dark" data-action="new-watch">Watch for a deal <span aria-hidden="true">↗</span></button></div>`;
+ }).join(''):`<div class="empty-state"><h3>${data?.lastScan?'No matches. Yet 👀':'The first check is on its way.'}</h3><p>${data?.lastScan?'No deals match these filters. Try an individual shop, or save a watch.':'Save your size and we’ll look for a deal.'}</p><button class="button button-dark" data-action="new-watch">Watch for a deal <span aria-hidden="true">↗</span></button></div>`;
  $('#show-more').hidden=shown>=offers.length;
 }
 function renderWatches(){
@@ -54,7 +54,7 @@ function renderSources(){
  $('#sources').innerHTML=data!.sources.map(s=>{
   const stale=s.last_success&&Date.now()-Date.parse(s.last_success)>30*3600000;
   const status=s.adapter==='planned'?'planned':stale?'stale':s.status;
-  const labels:Record<string,string>={live:'Checked',planned:'Coming later',error:'Check failed',partial:'Limited coverage',stale:'Check overdue'};
+  const labels:Record<string,string>={live:'Checked',planned:'Not connected',error:'Check failed',partial:'Limited coverage',stale:'Check overdue'};
   return `<article class="source-card">${shopIdentity(s)}<div class="source-bottom"><span class="source-status ${status==='live'?'':status==='planned'?'planned':'partial'}">${labels[status]??'Not checked yet'}</span><span>${s.last_success?`${s.product_count} shoes · ${esc(ago(s.last_success))}`:'Not connected'}</span></div>${s.error?`<details><summary>Check details</summary><p>${esc(s.error)}</p></details>`:''}<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">Visit ${esc(s.name)} ↗</a></article>`;
  }).join('');
 }
@@ -63,6 +63,7 @@ async function load(){
  $('#scan-status').textContent=data!.lastScan?`Checked ${ago(data!.lastScan)}`:'First check pending';
  const brands=[...new Set(data!.offers.map(o=>o.brand))].sort(),prev=value('filter-brand');
  $('#filter-brand').innerHTML='<option value="any">Any brand</option>'+brands.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');if(brands.includes(prev))$<HTMLSelectElement>('#filter-brand').value=prev;
+ const shopSelect=$<HTMLSelectElement>('#filter-region'),chosenShop=shopSelect.value;shopSelect.innerHTML='<option value="any">All shops</option><option value="IE">🇮🇪 Irish shops</option><option value="EU">🇪🇺 EU shops</option><optgroup label="Individual shops">'+data!.sources.filter(s=>s.adapter!=='planned').map(s=>`<option value="shop:${esc(s.id)}">${esc(s.name)}</option>`).join('')+'</optgroup>';shopSelect.value=chosenShop;
  const watchBrands=[...new Set([...brands,'ASICS','HOKA','BROOKS','SAUCONY','NIKE','ADIDAS','NEW BALANCE','ON','PUMA','MIZUNO'])].sort();$('#watch-brand').innerHTML=watchBrands.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
  $('#model-suggestions').innerHTML=[...new Set(data!.offers.map(shoeTitle))].slice(0,150).map(t=>`<option value="${esc(t)}"></option>`).join('');
  $('#pipeline-status').textContent=`Checks at 08:00 and 20:00, Dublin time. ${data!.pipeline?`Latest run: ${data!.pipeline.status}.`:''} Prices and links are checked again before sale emails.`;

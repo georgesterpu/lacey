@@ -1,0 +1,3 @@
+import {test,expect} from 'bun:test';
+import {lifestyleVariant} from '../src/lifestyle';
+test('Lifestyle uses selected variant stock and leaves unlabelled sizes source-specific',async()=>{const html=await Bun.file('fixtures/lifestyle-variant.html').text(),url='https://www.lifestylesports.com/ie/variation?pid=12069220&dwvar_12069220_LSSSize=7';const o=lifestyleVariant(html,url,'now');expect(o).toMatchObject({source_id:'lifestyle',product_id:'12069220',size:'7',size_system:'unknown',price:13500,reference_price:18000,available:1,fit:'men'});expect(()=>lifestyleVariant(html,url.replace('LSSSize=7','LSSSize=8'),'now')).toThrow('selected size mismatch');expect(()=>lifestyleVariant(html.replace('content="EUR"','content="USD"'),url,'now')).toThrow('currency');});

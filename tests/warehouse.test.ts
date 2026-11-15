@@ -1,0 +1,4 @@
+import {test,expect} from 'bun:test';
+import {warehouseOffers} from '../src/warehouse';
+const url='https://www.runningwarehouse.eu/adidas_adizero_Adios_Pro_4/descpage-A4AAPMR-EN.html?vat=IE';
+test('Warehouse fixture requires Ireland VAT, explicit UK sizes and actual stock rows',async()=>{const html=await Bun.file('fixtures/warehouse-product.html').text();const rows=warehouseOffers(html,url,new Date().toISOString());expect(rows).toHaveLength(8);expect(rows[0]).toMatchObject({source_id:'warehouse',size_system:'UK',size:'7',price:17290,reference_price:25000,available:1,currency:'EUR',fit:'men'});expect(()=>warehouseOffers(html.replace('value="IE" selected','value="IE"'),url,'now')).toThrow('Ireland VAT');expect(()=>warehouseOffers(html.replaceAll('content="EUR"','content="USD"'),url,'now')).toThrow('No supported');expect(warehouseOffers(html.replaceAll('content="InStock"','content="OutOfStock"'),url,'now').every(o=>o.available===0)).toBe(true);});

@@ -1,3 +1,5 @@
+import {collectLifestyle} from './lifestyle';
+import {collectWarehouse} from './warehouse';
 import type { Offer } from './types';
 export const sources = [
  {id:'amphibian',name:'Amphibian King',url:'https://www.amphibianking.ie',adapter:'shopify',collections:['mens-running-shoes','womens-running-shoes'],sizeSystem:'UK'},
@@ -5,8 +7,8 @@ export const sources = [
  {id:'elverys',name:'Elverys',url:'https://www.elverys.ie',adapter:'shopify',collections:['15-off-running-footwear','boys-running-footwear','girls-running-footwear'],sizeSystem:'unknown'},
  {id:'misterrunning',name:'MisterRunning',url:'https://www.misterrunning.com/en/',adapter:'planned',collections:[],sizeSystem:'unknown'},
  {id:'21run',name:'21RUN',url:'https://21run.com/eu/',adapter:'planned',collections:[],sizeSystem:'unknown'},
- {id:'warehouse',name:'Running Warehouse Europe',url:'https://www.runningwarehouse.eu',adapter:'planned',collections:[],sizeSystem:'unknown'},
- {id:'lifestyle',name:'Life Style Sports',url:'https://www.lifestylesports.com',adapter:'planned',collections:[],sizeSystem:'unknown'},
+ {id:'warehouse',name:'Running Warehouse Europe',url:'https://www.runningwarehouse.eu',adapter:'warehouse',collections:[],sizeSystem:'unknown'},
+ {id:'lifestyle',name:'Life Style Sports',url:'https://www.lifestylesports.com',adapter:'lifestyle',collections:[],sizeSystem:'unknown'},
  {id:'sportsdirect',name:'Sports Direct',url:'https://www.sportsdirect.ie',adapter:'planned',collections:[],sizeSystem:'unknown'},
 ];
 export interface Product { id:number; title:string; vendor:string; tags:string[]|string; product_type:string; handle:string; options:{name:string;position:number}[]; images:{src:string}[]; variants:{id:number;price:string;compare_at_price:string|null;available:boolean;option1:string|null;option2:string|null;option3:string|null;featured_image?:{src:string}|null}[]; }
@@ -38,6 +40,8 @@ export function normalize(p:Product,source:typeof sources[number],now:string):Of
  });
 }
 export async function collect(source:typeof sources[number],now:string) {
+ if(source.adapter==='lifestyle')return collectLifestyle(now);
+ if(source.adapter==='warehouse')return collectWarehouse(now);
  const result=new Map<string,Offer>();let complete=true,rejected=0,seen=0,held=0;
  for(const collection of source.collections){for(let page=1;page<=2;page++){
   const response=await fetch(`${source.url}/collections/${collection}/products.json?limit=250&page=${page}`,{headers:{'User-Agent':'Lacey/0.4 (+size-aware running-shoe price checks)'},signal:AbortSignal.timeout(20000)});
