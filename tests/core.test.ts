@@ -65,7 +65,7 @@ test('a confirmation GET cannot opt someone in; POST verifies only that device�
   const result=await sendConfirmation(env,{id:first.id,email:watchInput.email});expect(result).toBe('sent');expect(messages).toHaveLength(1);expect(messages[0].subject).toBe('One little click for happy feet 😊 — Lacey');
   const token=messages[0].text.match(/confirm-email\?token=([a-f0-9]{64})/)![1];
   const landing=await handle(request(`/confirm-email?token=${token}`),env,'');expect(landing.headers.get('Content-Type')).toContain('charset=utf-8');expect(landing.headers.get('Referrer-Policy')).toBe('strict-origin');const page=await landing.text();expect(page).toContain('<meta charset="utf-8">');expect(page).toContain('lacey 😊');expect(page).toContain('we’ll keep an eye out');expect(page).not.toContain('no-referrer');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(0);
-  await handle(request(`/confirm-email?token=${token}`,'POST',undefined,undefined,{Origin:'null'}),env,'');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(1);
+  const confirmed=await handle(request(`/confirm-email?token=${token}`,'POST',undefined,undefined,{Origin:'null'}),env,'');expect(await confirmed.text()).toContain('No matching deals right now');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(1);
   expect((await env.DB.prepare('SELECT email_verified FROM watches WHERE id=?').bind(first.id).first<{email_verified:number}>())!.email_verified).toBe(1);
  }finally{globalThis.fetch=original;}
 });
@@ -93,4 +93,10 @@ test('a stripped Origin never bypasses token validation or cookie-owned form che
  const env=await database();await handle(request('/api/watches','POST','alice',watchInput),env,'');
  const invalid=await handle(request('/confirm-email?token='+ 'a'.repeat(64),'POST',undefined,undefined,{Origin:'null'}),env,'');expect(await invalid.text()).toContain('expired');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(0);
  expect((await handle(request('/api/watches','POST','alice',watchInput,{Origin:'null'}),env,'')).status).toBe(403);
+});
+
+test('watch previews are private and explicitly distinguish a saved watch with zero matches',async()=>{
+ const env=await database();const {id}=await(await handle(request('/api/watches','POST','alice',watchInput),env,'')).json();
+ expect((await handle(request(`/api/watches/${id}/matches`,'GET','bob'),env,'')).status).toBe(404);
+ const preview=await handle(request(`/api/watches/${id}/matches`,'GET','alice'),env,'');expect(preview.status).toBe(200);expect((await preview.json()).cards).toEqual([]);
 });

@@ -12,3 +12,5 @@
 @media(prefers-reduced-motion:reduce){.sole-left,.sole-right{transition:none}.mascot-sticker:hover .sole-left,.mascot-sticker:hover .sole-right{translate:none}}
 
 .shop-comparison{margin-top:12px;border-top:1px solid var(--line,#dedee4);font-size:16px}.shop-comparison summary{cursor:pointer;padding:14px 0;min-height:48px}.shop-comparison a{display:grid;grid-template-columns:1fr auto;gap:6px;padding:13px 0;min-height:48px;color:#34224f;text-decoration:none;border-top:1px solid #e7e3ed}.shop-comparison small{grid-column:1/-1;font-size:14px;color:#565761}.shop-comparison a:hover span{text-decoration:underline}
+
+svg.shop-flag{display:inline-block;width:30px;height:20px;flex-shrink:0;border:1px solid #dedee4;border-radius:2px;vertical-align:middle}.confirmation-find{border:1px solid #e5deed;border-radius:12px;padding:20px;margin:18px 0}.confirmation-find h2{font:600 21px/1.4 Arial,sans-serif;letter-spacing:0}.confirmation-find a{display:block;padding:14px 0;line-height:1.7;font-size:17px}.shop-comparison svg{vertical-align:middle}

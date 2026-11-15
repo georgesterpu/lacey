@@ -3,9 +3,9 @@ import { categories, discount, freshCutoff, matches } from './types';
 import { initializeSources, scan } from './scan';
 import { device, digest, rateLimit } from './identity';
 import { emailReady, sendConfirmation } from './email';
-import { shopLocation } from './shops';
+import { shopFlag, shopLocation } from './shops';
 import { planDigests, dispatchDigests } from './outbox';
-import { digestEmail } from './email-template';
+import { escapeHtml, digestEmail } from './email-template';
 import { nextCheck } from './schedule';
 import { sources as approvedSources } from './sources';
 import { currentDeals } from './catalogue';
@@ -58,7 +58,10 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   const row=await env.DB.prepare('SELECT c.watch_id,w.owner_id,w.email FROM email_confirmations c JOIN watches w ON w.id=c.watch_id WHERE c.token_hash=? AND c.expires_at>?').bind(await digest(token),new Date().toISOString()).first<{watch_id:string;owner_id:string;email:string}>();
   if(!row)return page('This link has expired.','Open your watchlist to request a new confirmation.');
   // GET is a confirmation screen; email security scanners cannot opt people in.
-  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id),env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())]);return page('You’re on the list 😊','We’ll email you when your shoe watch finds a match. Happy miles!');}
+  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id),env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())]);const watches=(await env.DB.prepare('SELECT * FROM watches WHERE owner_id=? AND email=? AND active=1').bind(row.owner_id,row.email).all<Watch>()).results;
+   const cards=shoeCards((await currentDeals(env)).filter(o=>watches.some(w=>matches(w,o))));
+   const preview=cards.slice(0,3).map(c=>`<article class="confirmation-find"><h2>${escapeHtml(c.offer.title)}</h2>${c.options.map(o=>`<a href="${escapeHtml(o.url)}" target="_blank" rel="noopener noreferrer">${shopFlag(o.source_id)} ${escapeHtml(approvedSources.find(s=>s.id===o.source_id)?.name??o.source_id)} · ${escapeHtml(o.size_system==='unknown'?'Shop size':o.size_system)} ${escapeHtml(o.size)} · €${(o.price/100).toFixed(2)} ↗</a>`).join('')}</article>`).join('');
+   return page('You’re on the list 😊',cards.length?`Your email is confirmed. ${cards.length} matching ${cards.length===1?'shoe':'shoes'} in the latest check. Here’s a peek:`:'Your email is confirmed and your watches are saved. No matching deals right now. We’ll keep looking.',undefined,preview+'<p>Checks at 08:00 and 20:00, Dublin time. We only send sale emails for new matches—no empty emails.</p>');}
   return page('Confirm your shoe alert.','One click, and we’ll keep an eye out for you.','Confirm my email');
  }
  if(path==='/unsubscribe-all'||path==='/api/unsubscribe'){
@@ -120,6 +123,8 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
    if(verified){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE id=?').bind(id),env.DB.prepare('UPDATE subscribers SET unsubscribed=0 WHERE email_hash=?').bind(await digest(email))]);return json({id,confirmation:'confirmed'},201);}
    return json({id,confirmation:await sendConfirmation(env,{id,email})},201);
   }
+  const previewWatch=path.match(/^\/api\/watches\/([a-f0-9-]{36})\/matches$/);
+  if(previewWatch&&method==='GET'){const watch=await env.DB.prepare('SELECT * FROM watches WHERE id=? AND owner_id=?').bind(previewWatch[1],user).first<Watch>();if(!watch)return json({error:'Watch not found'},404);return json({cards:shoeCards((await currentDeals(env)).filter(o=>matches(watch,o))).slice(0,6)});}
   const match=path.match(/^\/api\/watches\/([a-f0-9-]{36})$/);
   if(match&&method==='DELETE'){await env.DB.prepare('DELETE FROM watches WHERE id=? AND owner_id=?').bind(match[1],user).run();return json({ok:true});}
   if(match&&method==='PATCH'){const data=await body(request);if(typeof data.active!=='boolean')return json({error:'Invalid state'},400);const watch=await env.DB.prepare('SELECT email,email_verified FROM watches WHERE id=? AND owner_id=?').bind(match[1],user).first<{email:string;email_verified:number}>();if(!watch)return json({error:'Watch not found'},404);const writes=[env.DB.prepare('UPDATE watches SET active=? WHERE id=? AND owner_id=?').bind(data.active?1:0,match[1],user)];if(data.active&&watch.email_verified)writes.push(env.DB.prepare('UPDATE subscribers SET unsubscribed=0 WHERE email_hash=?').bind(await digest(watch.email)));await env.DB.batch(writes);return json({ok:true});}
@@ -137,4 +142,4 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
  return new Response('Not found',{status:404});
 }
-function page(title:string,message:string,button?:string) {return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><title>Lacey</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">lacey 😊</a><h1>${title}</h1><p>${message}</p>${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin'}});}
+function page(title:string,message:string,button?:string,extra='') {return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><title>Lacey</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">lacey 😊</a><h1>${title}</h1><p>${message}</p>${extra}${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin'}});}
