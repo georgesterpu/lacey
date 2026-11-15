@@ -2,7 +2,7 @@ import type { Env, Offer } from './types';
 import { collect, sources } from './sources';
 import { scheduleSlot } from './schedule';
 import { cleanup } from './retention';
-const connectionNotes:Record<string,string>={misterrunning:'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.', '21run':'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.',sportsdirect:'Connection test timed out; automatic price/size checks are not connected.'};
+const connectionNotes:Record<string,string>={warehouse:'Paused: customer product links and verification returned HTTP 406. Not publishing offers until browser access is reliable.',misterrunning:'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.', '21run':'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.',sportsdirect:'Connection test timed out; automatic price/size checks are not connected.'};
 export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter,error) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter,error=CASE WHEN excluded.adapter=\'planned\' THEN excluded.error ELSE sources.error END').bind(s.id,s.name,s.url,s.adapter,connectionNotes[s.id]??null)));}
 export async function scan(env:Env) {
  await initializeSources(env);const now=new Date().toISOString(),slot=scheduleSlot(),id=crypto.randomUUID();
