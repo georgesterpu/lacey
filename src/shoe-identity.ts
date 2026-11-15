@@ -32,6 +32,6 @@ export function shoeCards(offers:Offer[]):ShoeCard[] {
   const size=comparableSize(o),index=card.options.findIndex(v=>comparableSize(v)===size);
   if(index<0)card.options.push(o);else if(o.price<card.options[index].price||(o.price===card.options[index].price&&o.id<card.options[index].id))card.options[index]=o;
  }
- for(const card of cards.values()){card.options.sort((a,b)=>Number(a.size)-Number(b.size)||a.size_system.localeCompare(b.size_system));card.offer=[...card.options].sort((a,b)=>a.price-b.price||a.id.localeCompare(b.id))[0];}
+ for(const card of cards.values()){card.options.sort((a,b)=>Number(a.size)-Number(b.size)||a.size_system.localeCompare(b.size_system)||a.source_id.localeCompare(b.source_id)||a.id.localeCompare(b.id));card.offer=[...card.options].sort((a,b)=>a.price-b.price||a.id.localeCompare(b.id))[0];}
  return [...cards.values()].sort((a,b)=>a.offer.price-b.offer.price||a.key.localeCompare(b.key));
 }

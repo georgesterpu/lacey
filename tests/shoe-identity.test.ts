@@ -13,4 +13,5 @@ test('one card keeps each size’s own cheapest price and variant link; unknown 
  const cheap={...shoe,id:'runhub:2',source_id:'runhub',product_id:'2',price:9000,url:'https://example.test/cheap'};
  const cards=shoeCards([shoe,{...shoe,id:'amphibian:3',size:'8',url:'https://example.test/8'},cheap]);expect(cards).toHaveLength(1);expect(cards[0].options).toHaveLength(2);expect(cards[0].options.find(o=>o.size==='9')!.url).toBe(cheap.url);
  expect(shoeCards([shoe,{...cheap,size_system:'unknown'}])[0].options).toHaveLength(2);
+ const unknown=[{...shoe,size_system:'unknown'},{...cheap,size_system:'unknown'}];expect(shoeCards(unknown)[0].options.map(o=>o.id)).toEqual(shoeCards([...unknown].reverse())[0].options.map(o=>o.id));
 });
