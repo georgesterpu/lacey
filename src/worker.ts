@@ -1,4 +1,3 @@
-import { handle } from './server';
-import type { Env } from './types';
-import clientCode from '../dist/client/app.js' with {type:'text'};
-export default {async fetch(request:Request,env:Env){try{return await handle(request,env,clientCode);}catch(e){console.error('Request failed',e instanceof Error?e.message:'Unknown error');return Response.json({error:'Something went wrong. Please try again.'},{status:500});}}};
+// The former Sites deployment is a redirect only. Its D1 binding is retained
+// for recovery, but no second watchlist can accumulate after the cutover.
+export default {fetch(request:Request){const url=new URL(request.url);return Response.redirect(`https://lacey.january.ie${url.pathname}${url.search}`,308);}};

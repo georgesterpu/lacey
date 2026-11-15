@@ -1,6 +1,6 @@
 # Lacey production: Vercel and january.ie
 
-Vercel project **lacey**, ID `prj_dMJPR26hdpOfYyHecvwO6aMNeiNi`, under **george-sterpus-projects**. It is independent of `blockops`; no BlockOps settings, credentials or storage are reused. The sender is **Lacey <lacey@january.ie>**. The canonical website is **https://january.ie**, with www redirecting to it. The temporary production alias is **https://lacey-january.vercel.app**.
+Vercel project **lacey**, ID `prj_dMJPR26hdpOfYyHecvwO6aMNeiNi`, under **george-sterpus-projects**. It is independent of `blockops`; no BlockOps settings, credentials or storage are reused. The sender is **Lacey <lacey@january.ie>**. The canonical website is **https://lacey.january.ie**. The main january.ie website stays independent. The temporary production alias is **https://lacey-january.vercel.app**.
 
 ## Persistent data
 
@@ -49,9 +49,9 @@ The restore checks authenticated encryption and schema compatibility, rejects a 
 
 ## Initial migration from Sites
 
-The previous deployment remains on managed Cloudflare D1 while DNS is being completed. A private, complete export of the member-data tables was taken before import. It contained **zero watches/subscribers and one feedback entry**. `scripts/import-sites-data.ts` imported the feedback and checked every member-table row count in a transaction. It refuses truncated exports, populated destinations and unsupported historical-job references. The old catalogue is recollected from the approved sources rather than copied as stale offers. No member data was invented or discarded.
+The previous deployment retains its managed Cloudflare D1 database for recovery. Its public handler becomes a redirect to lacey.january.ie at cutover, so it cannot accumulate a separate watchlist. A private, complete export of the member-data tables was taken before import. It contained **zero watches/subscribers and one feedback entry**. `scripts/import-sites-data.ts` imported the feedback and checked every member-table row count in a transaction. It refuses truncated exports, populated destinations and unsupported historical-job references. The old catalogue is recollected from the approved sources rather than copied as stale offers. No member data was invented or discarded.
 
-After DNS is live, redirect the old Sites app to the canonical domain so it cannot accumulate a separate watchlist. Keep its D1 data until the transition is verified.
+Keep the old D1 binding and encrypted migration backup until the transition is verified.
 
 ## Email setup and privacy
 
@@ -63,7 +63,7 @@ Emails are kept behind server-side credentials. The public API does not expose a
 
 ## Scheduler and isolation
 
-The existing private GitHub repository `georgesterpu/shoehoo-jobs` remains the source/CI/scheduler repository. The deterministic runner targets 08:00 and 20:00 Europe/Dublin, with catch-up triggers and a fresh Lacey-only `CRON_SECRET`. After the Vercel cutover, its `APP_URL` points to the Vercel production alias until the custom domain resolves, then to january.ie. It has no LLM dependency. The earlier ChatGPT task still requires separate account cleanup if enabled; it is not used by this runner.
+The existing private GitHub repository `georgesterpu/shoehoo-jobs` remains the source/CI/scheduler repository. The deterministic runner targets 08:00 and 20:00 Europe/Dublin, with catch-up triggers and a fresh Lacey-only `CRON_SECRET`. After the Vercel cutover, its `APP_URL` points to the Vercel production alias until the custom domain resolves, then to lacey.january.ie. It has no LLM dependency. The earlier ChatGPT task still requires separate account cleanup if enabled; it is not used by this runner.
 
 BlockOps’ environment variables, storage and project configuration are unchanged. Vercel/Turso account limits and the Resend account quota are shared account-level limits even though project data and app keys are isolated.
 
@@ -73,10 +73,10 @@ The authoritative nameservers remain with the existing host. Vercel returned the
 
 | Type | Name | Value |
 | --- | --- | --- |
-| A | @ | 216.198.79.1 |
-| A | @ | 64.29.17.1 |
-| CNAME | www | 437124a36273bfa8.vercel-dns-017.com |
+| CNAME | lacey | 437124a36273bfa8.vercel-dns-017.com |
 
-The project owns both domain associations, with www redirecting to january.ie. Ownership verification and DNS/HTTPS readiness are distinct; check both before declaring the custom domain live. Do not replace unrelated TXT/MX records or change nameservers.
+The project owns the lacey.january.ie association; the apex and www are not assigned to Lacey. The DNS panel can use the full name lacey.january.ie rather than the relative label lacey. Ownership verification and DNS/HTTPS readiness are distinct; check both before declaring the custom domain live. Do not replace unrelated TXT/MX records or change nameservers.
 
 References: [Vercel Bun runtime](https://vercel.com/docs/functions/runtimes/bun), [Turso TypeScript client](https://docs.turso.tech/sdk/ts/reference), [Turso recovery](https://docs.turso.tech/cloud/point-in-time-recovery), [Resend domains](https://resend.com/docs/dashboard/domains/introduction).
+
+Direct Vercel Git import needs the Vercel GitHub app to be granted access to the private repository; the initial connection attempt was denied. CI and scheduled jobs already run on GitHub. CLI build, deployment and promotion work independently of that optional connection.
