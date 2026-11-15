@@ -3,7 +3,7 @@ import { freshCutoff } from './types';
 // Retain catalogue/price data separately from the public deals. An ended sale,
 // unavailable variant, stale observation, failed source, or known dead link is
 // never a public offer just because its row still exists in retained history.
-export async function currentDeals(env:Env,limit=20000) {
+export async function currentDeals(env:Env,limit=-1) {
  return (await env.DB.prepare(`SELECT o.* FROM current_offers o JOIN sources s ON s.id=o.source_id
   WHERE o.available=1 AND o.checked_at>=? AND o.reference_price>o.price
   AND o.price*100<=o.reference_price*80 AND s.status IN('live','partial')

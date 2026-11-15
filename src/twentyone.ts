@@ -138,7 +138,7 @@ interface SizeResponse {
   products: Variant[];
   size_table?: string;
 }
-interface Selected {
+interface ParentProduct {
   sku: string;
   preselected_sku: string;
   title: string;
@@ -195,7 +195,7 @@ export function twentyOneOffers(
     )
   )
     throw new Error('21RUN size table headers changed');
-  const p = parent as Selected;
+  const p = parent as ParentProduct;
   if (
     p?.sku !== sku ||
     twentyOneLink(p.product_url) !== canonical ||

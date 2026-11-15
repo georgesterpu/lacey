@@ -16,7 +16,7 @@ GitHub Actions schedules `scripts/run-jobs.mjs` at08:00/20:00 Europe/Dublin with
 
 The durable cursor lives in `app_state`; staged offers live in `offer_snapshots`. Each batch processes up to eight products, saves its rows and cursor atomically, and releases its short lease. Eight is a request-duration budget, **not** a limit on catalogue coverage. The next invocation resumes where it stopped. A completed crawl atomically replaces the public snapshot; the previous fresh snapshot remains available while collecting. No schema change or new queue service was needed. Old cursors expire after seven days.
 
-The runner has a90-minute safety budget. Exhaustion leaves its checkpoint intact for the catch-up runner; failures are visible in shop status, not misrepresented as “no matches”. Real403/406/429 blocking stops collection and triggers the existing12-hour source cooldown. Permission or network problems cannot be fixed by increasing product limits.
+A manual `catalogue_only` workflow input refreshes inventory without sending customer emails. The runner has a90-minute safety budget. Exhaustion leaves its checkpoint intact for the catch-up runner; failures are visible in shop status, not misrepresented as “no matches”. Real403/406/429 blocking stops collection and triggers the existing12-hour source cooldown. Permission or network problems cannot be fixed by increasing product limits.
 
 ## Cross-shop identity
 

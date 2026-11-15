@@ -22,6 +22,11 @@ for(let step=0;step<2000;step++){
  await sleep(result.status==='busy'?5000:200);
 }
 if(!catalogueDone)throw new Error('Catalogue time budget exhausted; checkpoint retained');
+if(process.env.CATALOGUE_ONLY==='true'){
+ if(catalogueFailed)throw new Error('Catalogue failed; inspect shop checks');
+ console.log('Catalogue refresh complete; email delivery was not requested');
+ process.exit(0);
+}
 let complete=false;
 for(let page=0;page<200;page++){
  const result=await post('/api/internal/dispatch',{runId:scan.runId});

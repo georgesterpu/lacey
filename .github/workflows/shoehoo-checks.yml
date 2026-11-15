@@ -7,6 +7,11 @@ on:
     - cron: '15 8,20 * * *'
       timezone: 'Europe/Dublin'
   workflow_dispatch:
+    inputs:
+      catalogue_only:
+        description: Refresh catalogue without sending emails
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -22,6 +27,7 @@ jobs:
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CATALOGUE_ONLY: ${{ inputs.catalogue_only }}
         run: node scripts/run-jobs.mjs
       - name: Retain encrypted customer-data backup
         if: always()
