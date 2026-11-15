@@ -9,7 +9,7 @@ const client=remoteClient({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TUR
 const id=crypto.randomUUID(),owner=`browser-email:${id}`,email=`browser-email-${id}@example.test`,token=randomToken(),hash=await digest(email),now=new Date().toISOString();
 try{
  await client.batch([
- {sql:"INSERT INTO watches(id,owner_id,email,kind,query,category,fit,size_system,size,budget,created_at,consent_at,unsubscribe_token) VALUES(?,?,?,'category','','any','women','UK','6',12000,?,?,?)",args:[id,owner,email,now,now,randomToken()]},
+ {sql:"INSERT INTO watches(id,owner_id,email,kind,query,category,fit,size_system,size,budget,created_at,consent_at,unsubscribe_token) VALUES(?,?,?,'model','Lacey browser email-link check','any','women','UK','6',12000,?,?,?)",args:[id,owner,email,now,now,randomToken()]},
  {sql:'INSERT INTO email_confirmations VALUES(?,?,?,?)',args:[id,await digest(token),new Date(Date.now()+3600000).toISOString(),now]}
  ],'write');
  await mkdir('screenshots',{recursive:true});
