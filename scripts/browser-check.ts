@@ -2,6 +2,7 @@ import {mkdir} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 await mkdir('screenshots',{recursive:true});
 const base=process.env.APP_URL??'http://127.0.0.1:3000';
+if((await (await fetch(new URL('/api/health',base))).json()).emailReady)throw new Error('State-changing browser checks require email delivery disabled. Use the isolated preview or local environment.');
 async function until(view:InstanceType<typeof Bun.WebView>,expression:string){const end=Date.now()+20000;while(Date.now()<end){if(await view.evaluate(expression))return;await Bun.sleep(150);}throw new Error(`Browser check timed out: ${expression}`);}
 await using view=new Bun.WebView({width:1440,height:1150,backend:{type:'chrome',path:process.env.BUN_CHROME_PATH,url:false}});
 await view.navigate(base);await until(view,'document.querySelectorAll(".product-card").length > 0');

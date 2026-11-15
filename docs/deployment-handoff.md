@@ -55,7 +55,7 @@ Keep the old D1 binding and encrypted migration backup until the transition is v
 
 ## Email setup and privacy
 
-The production sender is `Lacey <lacey@january.ie>`, with a dedicated Resend Sending-access key restricted to january.ie. The account’s existing Resend plan and sending reputation are shared at the provider level; this does not reuse BlockOps’ API key. Preview/development can never send, even if email credentials are mistakenly copied there. `EMAIL_ENABLED` is an explicit production kill switch and stays false until sender/DNS validation is finished. The app’s attempt budget is 50 per day initially, leaving headroom in the shared free email account.
+The production sender is `Lacey <lacey@january.ie>`, with a dedicated Resend Sending-access key restricted to january.ie. The account’s existing Resend plan and sending reputation are shared at the provider level; this does not reuse BlockOps’ API key. Preview/development can never send, even if email credentials are mistakenly copied there. `EMAIL_ENABLED` is an explicit production kill switch. It is now true after the custom domain and sender were verified. The app’s attempt budget is 50 per day initially, leaving headroom in the shared free email account.
 
 The user is configuring Resend in its dashboard and will add its exact DKIM/return-path records at the authoritative DNS host. Sending from a verified address does not create a receiving mailbox at the domain host. Incoming-mail MX records are separate and are not replaced by this deployment.
 
@@ -80,3 +80,14 @@ The project owns the lacey.january.ie association; the apex and www are not assi
 References: [Vercel Bun runtime](https://vercel.com/docs/functions/runtimes/bun), [Turso TypeScript client](https://docs.turso.tech/sdk/ts/reference), [Turso recovery](https://docs.turso.tech/cloud/point-in-time-recovery), [Resend domains](https://resend.com/docs/dashboard/domains/introduction).
 
 Direct Vercel Git import needs the Vercel GitHub app to be granted access to the private repository; the initial connection attempt was denied. CI and scheduled jobs already run on GitHub. CLI build, deployment and promotion work independently of that optional connection.
+
+## Verified cutover: 15 November 2026
+
+- `https://lacey.january.ie` returns the Lacey app over valid HTTPS, without sign-in. All four authoritative nameservers return the expected CNAME. The apex and www are not associated with Lacey.
+- The former Sites URL returns a 308 redirect to the same path/query at lacey.january.ie. Its D1 binding is retained; the last source check found zero watches and the single migrated feedback entry.
+- Production and preview have distinct Turso URLs and tokens. All five initial SQL migrations applied, and a repeated migration applied zero changes while preserving data.
+- 40 behavior tests and CI passed. Live desktop/mobile watch flows passed before email activation. A watch saved in production survived promotion of a new deployment and was removed only after verification.
+- A production encrypted backup was fetched, authenticated and decrypted successfully. The deterministic GitHub workflow succeeded against Vercel, including upload of a 14-day encrypted backup artifact. The scheduler now targets the custom subdomain.
+- A real confirmation from Lacey <lacey@january.ie> reached the owner’s Gmail. Gmail’s Authentication-Results report SPF, DKIM and DMARC passing. Gmail initially classified it as Spam; the owner was told to mark it Not spam. This is an inbox-placement issue to monitor, not a claim of guaranteed delivery for all recipients.
+- Production sending is enabled with the dedicated key. The 50-attempt application budget applies; preview remains unable to send. No test watch or recurring test subscription was left behind.
+- The existing BlockOps project remains unchanged. Direct Vercel Git import is still optional/pending repository authorization; tested CLI deployment and promotion are working.
