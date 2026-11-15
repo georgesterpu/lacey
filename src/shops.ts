@@ -2,5 +2,5 @@
 export type ShopRegion = 'IE' | 'EU';
 export function shopRegion(id:string):ShopRegion { return ['misterrunning','warehouse','21run'].includes(id)?'EU':'IE'; }
 export function shopLocation(id:string) {const region=shopRegion(id);return {region,flag:region==='EU'?'🇪🇺':'🇮🇪',label:region==='EU'?'EU shop':'Irish shop'};}
-// Draw flags directly so Windows browsers do not render regional letters.
-export function shopFlag(id:string){if(shopRegion(id)==='IE')return '<svg class="shop-flag" viewBox="0 0 30 20" width="30" height="20" aria-hidden="true"><path fill="#169b62" d="M0 0h10v20H0z"/><path fill="#fff" d="M10 0h10v20H10z"/><path fill="#ff883e" d="M20 0h10v20H20z"/></svg>';const stars=Array.from({length:12},(_,i)=>{const a=i*Math.PI/6,x=15+6.7*Math.sin(a),y=10-6.7*Math.cos(a);const points=Array.from({length:10},(_,j)=>{const r=j%2?.55:1.35,b=j*Math.PI/5-Math.PI/2;return `${x+r*Math.cos(b)},${y+r*Math.sin(b)}`;}).join(' ');return `<polygon points="${points}" fill="#ffdf00"/>`;}).join('');return `<svg class="shop-flag" viewBox="0 0 30 20" width="30" height="20" aria-hidden="true"><path fill="#003399" d="M0 0h30v20H0z"/>${stars}</svg>`;}
+// Keep native Unicode flags; the browser and OS choose their presentation.
+export function shopFlag(id:string){return `<span class="shop-flag" aria-hidden="true">${shopLocation(id).flag}</span>`;}
