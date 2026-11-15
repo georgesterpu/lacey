@@ -1,0 +1,12 @@
+import {mkdir} from 'node:fs/promises';
+await mkdir('screenshots',{recursive:true});
+const base=process.env.APP_URL??'http://127.0.0.1:3000';
+await using view=new Bun.WebView({width:1440,height:1150,backend:{type:'chrome',path:process.env.BUN_CHROME_PATH,url:false}});
+await view.navigate(base);await Bun.sleep(1500);
+const desktop=await view.evaluate('({cards:document.querySelectorAll(".product-card").length,overflow:document.documentElement.scrollWidth>innerWidth})');console.log('Desktop',desktop);await Bun.write('screenshots/desktop.png',await view.screenshot());
+await view.click('.header-cta');await view.click('#watch-next');await view.click('input[name="consent"]');await view.click('#watch-submit');await Bun.sleep(700);
+console.log('Watch saved',await view.evaluate('({cards:document.querySelectorAll(".watch-card").length,error:document.querySelector("#watch-error").textContent,dialog:document.querySelector("#watch-dialog").open})'));
+await view.navigate(base);await Bun.sleep(700);console.log('After reload',await view.evaluate('document.querySelector("#watch-count").textContent'));
+await view.click('[data-tab="watches"]');await view.click('[data-pause]');await Bun.sleep(300);console.log('Pause',await view.evaluate('document.querySelector(".watch-card").classList.contains("paused")'));
+await view.click('[data-delete]');await Bun.sleep(300);console.log('Removed',await view.evaluate('document.querySelectorAll(".watch-card").length'));
+await using mobile=new Bun.WebView({width:390,height:844,backend:{type:'chrome',path:process.env.BUN_CHROME_PATH,url:false}});await mobile.navigate(base);await Bun.sleep(1000);console.log('Mobile',await mobile.evaluate('({width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,cards:document.querySelectorAll(".product-card").length})'));await Bun.write('screenshots/mobile.png',await mobile.screenshot());await mobile.click('.header-cta');await Bun.write('screenshots/mobile-watch.png',await mobile.screenshot());

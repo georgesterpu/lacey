@@ -1,0 +1,6 @@
+{
+  "name":"brave-runners", "private":true, "type":"module", "version":"0.1.0",
+  "packageManager":"bun@1.4.4", "engines":{"bun":">=1.4.4"},
+  "scripts":{"dev":"bun --watch src/local.ts","start":"bun src/local.ts","build":"bun scripts/build.ts","check":"tsc --noEmit","test":"bun test","scan":"bun scripts/scan.ts"},
+  "devDependencies":{"@types/bun":"1.4.4","typescript":"7.0.2"}
+}
