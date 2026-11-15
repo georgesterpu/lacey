@@ -1,3 +1,4 @@
+import { shoeIdentity } from './shoe-identity';
 export interface Statement { bind(...values: unknown[]): Statement; all<T=Record<string,unknown>>(): Promise<{results:T[]}>; first<T=Record<string,unknown>>(): Promise<T|null>; run(): Promise<unknown>; }
 export interface DB { prepare(sql:string):Statement; batch(statements:Statement[]):Promise<unknown>; }
 export interface Env { DB:DB; RESEND_API_KEY?:string; EMAIL_FROM?:string; APP_URL?:string; CRON_SECRET?:string; DAILY_EMAIL_LIMIT?:string; }
@@ -13,6 +14,6 @@ export function matches(w:Watch,o:Offer) {
   if(w.fit==='kids' ? o.fit!=='kids' : o.fit==='kids'||o.fit==='unknown'||(w.fit!=='any' && w.fit!==o.fit && o.fit!=='unisex')) return false;
   if(w.kind==='category' && w.category!=='any' && w.category!==o.category) return false;
   if(w.kind==='brand' && w.query.toLowerCase()!==o.brand.toLowerCase()) return false;
-  if(w.kind==='model') { const tokens:string[]=w.query.toLowerCase().match(/[a-z0-9]+/g)??[]; const titleTokens:string[]=o.title.toLowerCase().match(/[a-z0-9]+/g)??[]; if(!tokens.length || !tokens.every(t=>titleTokens.includes(t)))return false; }
+  if(w.kind==='model') { const tokens:string[]=w.query.toLowerCase().match(/[a-z0-9]+/g)??[]; const titleTokens:string[]=o.title.toLowerCase().match(/[a-z0-9]+/g)??[]; if(!tokens.length || (!tokens.every(t=>titleTokens.includes(t)) && (shoeIdentity(o).confidence!=='normalized'||shoeIdentity({...o,title:w.query}).key!==shoeIdentity(o).key)))return false; }
   return !w.colour || o.colour.toLowerCase().includes(w.colour.toLowerCase());
 }

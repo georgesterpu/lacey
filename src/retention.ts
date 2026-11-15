@@ -1,6 +1,10 @@
 import type { Env } from './types';
+import { releaseUnsentRecommendations } from './recommendations';
 export async function cleanup(env:Env,now=new Date()) {
  const current=now.toISOString(),twoDays=new Date(+now-2*86400000).toISOString(),sevenDays=new Date(+now-7*86400000).toISOString(),ninetyDays=new Date(+now-90*86400000).toISOString();
+ const expired=(await env.DB.prepare("SELECT id FROM digest_jobs WHERE status IN('queued','sending') AND created_at<?").bind(new Date(+now-6*3600000).toISOString()).all<{id:string}>()).results;
+ for(const job of expired)await releaseUnsentRecommendations(env,job.id);
+ // Compact recommendation receipts intentionally outlive 90-day delivery logs.
  await env.DB.batch([
   env.DB.prepare("UPDATE digest_jobs SET status='suppressed',error='Scan expired',payload=NULL,candidates='[]' WHERE status IN('queued','sending') AND created_at<?").bind(new Date(+now-6*3600000).toISOString()),
   env.DB.prepare("UPDATE digest_jobs SET payload=NULL,candidates='[]' WHERE status IN('sent','suppressed','failed') AND created_at<?").bind(twoDays),

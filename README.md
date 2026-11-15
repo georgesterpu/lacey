@@ -11,6 +11,7 @@ A friendly shoe lookout with a pair of smiling soles, readable labels, and a lit
 - Watches for a model, brand or category, fit/age group, size and budget. No ChatGPT sign-in. A private random HttpOnly device cookie scopes watch management.
 - Unlabelled shop sizes are never silently converted to UK. “Watch this shoe” can use that shop's explicitly labelled listed-size scheme for the selected model/source.
 - Ended discounts, vanished products and unavailable variants leave the public deals after a successful update. Failed sources and known dead links are hidden. Source snapshots are validated before publication. Fresh product/page validation precedes sale digests; failures suppress alerts instead of trusting old data.
+- Recipient/model receipts prevent repeating a shoe across scans, watches and shops. Multiple watched sizes share one card; each size keeps its cheapest verified shop link. A large unsubscribe button and email-client one-click headers stop all sale alerts without signing in.
 - Verified emails receive one combined HTML/plain-text digest per slot, up to two sale digests/day, with up to six shoes and direct retailer links. Actual delivery still needs a verified sender.
 - `/email-preview` shows the HTML design using clearly labelled preview content. `/api/health` shows non-personal run/source/outbox status.
 
@@ -67,6 +68,7 @@ Email credentials are not provisioned or fabricated. With no sender, watches sav
 - `src/scan.ts`: run leases/retries, atomic source snapshots, retention
 - `src/validation.ts`: page/variant preflight and shared freshness cache
 - `src/outbox.ts`: indexed matching, recipient digests, leases and idempotent retries
+- `src/shoe-identity.ts` and `src/recommendations.ts`: conservative cross-shop model identity and lasting per-recipient receipts
 - `src/email-template.ts`: escaped, readable HTML and plain-text templates
 - `src/schedule.ts`: Dublin calendar slots and daylight-saving handling
 - `src/server.ts`: public app, guest watch privacy, confirmation and protected writers

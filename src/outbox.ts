@@ -1,11 +1,13 @@
 import type { Env, Offer, Watch } from './types';
-import { discount, matches } from './types';
+import { matches } from './types';
 import { digest, randomToken } from './identity';
 import { digestEmail } from './email-template';
 import { emailReady, reserveDelivery } from './email';
 import { sameVerifiedOffer, validateProduct } from './validation';
-interface Candidate {watchId:string;offerId:string;price:number;}
-interface Job {id:string;run_id:string;email_hash:string;status:string;candidates:string;payload:string|null;attempts:number;created_at:string;}
+import { comparableSize, shoeCards, shoeIdentity } from './shoe-identity';
+import { releaseUnsentRecommendations, reserveRecommendation } from './recommendations';
+interface Candidate {watchId:string;watchIds?:string[];offerId:string;price:number;}
+interface Job {id:string;run_id:string;email_hash:string;status:string;candidates:string;payload:string|null;attempts:number;created_at:string;error:string|null;}
 export async function planDigests(env:Env,runId:string,limit=20){
  const run=await env.DB.prepare('SELECT status,started_at,cursor_email,planning_done FROM scan_runs WHERE id=?').bind(runId).first<{status:string;started_at:string;cursor_email:string;planning_done:number}>();
  if(!run||!['complete','partial'].includes(run.status))return {planned:0,done:false,error:'A successful source scan is required'};
@@ -19,12 +21,19 @@ export async function planDigests(env:Env,runId:string,limit=20){
   const subscriber=await env.DB.prepare('SELECT unsubscribed FROM subscribers WHERE email_hash=?').bind(hash).first<{unsubscribed:number}>();
   if(!subscriber?.unsubscribed){
    const watches=(await env.DB.prepare('SELECT * FROM watches WHERE email=? AND active=1 AND email_verified=1 ORDER BY id LIMIT 100').bind(email).all<Watch>()).results;
-   const candidates:Candidate[]=[];const seen=new Set<string>();
+   const found=new Map<string,{offer:Offer;candidate:Candidate}>();
    for(const w of watches){
-    // The size/fit/price index reduces each query to a small matching bucket.
-    // No per-subscriber crawling and no watches × full-catalogue in-memory scan.
-    const rows=(await env.DB.prepare(`SELECT o.* FROM offer_snapshots o JOIN sources s ON s.id=o.source_id AND s.live_snapshot_id=o.snapshot_id WHERE o.run_id=? AND o.size_system=? AND o.size=? AND (?='' OR o.source_id=?) AND o.available=1 AND o.price<=? AND o.reference_price>o.price AND o.price*100<=o.reference_price*(100-?) AND (?='any' AND o.fit IN('men','women','unisex') OR o.fit=? OR (? IN('men','women') AND o.fit='unisex')) AND (?!='category' OR ?='any' OR o.category=?) AND (?!='brand' OR o.brand=?) AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.watch_id=? AND n.offer_id=o.id AND n.status='sent' AND n.price<=o.price) ORDER BY o.price LIMIT 30`).bind(runId,w.size_system.startsWith('STORE:')?'unknown':w.size_system,w.size,w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.budget,w.min_discount,w.fit,w.fit,w.fit,w.kind,w.category,w.category,w.kind,w.query.toUpperCase(),w.id).all<Offer>()).results;
-    for(const offer of rows.filter(o=>matches(w,o)).sort((a,b)=>discount(b)-discount(a))){const key=`${offer.source_id}:${offer.product_id}:${offer.size}:${offer.fit}`;if(seen.has(key))continue;seen.add(key);candidates.push({watchId:w.id,offerId:offer.id,price:offer.price});if(candidates.length>=12)break;}if(candidates.length>=12)break;
+    // Indexed size buckets, never a fresh crawl for each subscriber. Collect all
+    // watches before ranking so their order cannot pick a more expensive shop.
+    const rows=(await env.DB.prepare(`SELECT o.* FROM offer_snapshots o JOIN sources s ON s.id=o.source_id AND s.live_snapshot_id=o.snapshot_id WHERE o.run_id=? AND o.size_system=? AND o.size=? AND (?='' OR o.source_id=?) AND o.available=1 AND o.price<=? AND o.reference_price>o.price AND o.price*100<=o.reference_price*(100-?) AND (?='any' AND o.fit IN('men','women','unisex') OR o.fit=? OR (? IN('men','women') AND o.fit='unisex')) AND (?!='category' OR ?='any' OR o.category=?) AND (?!='brand' OR o.brand=?) AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.watch_id=? AND n.offer_id=o.id AND n.status='sent' AND n.price<=o.price) ORDER BY o.price,o.id LIMIT 60`).bind(runId,w.size_system.startsWith('STORE:')?'unknown':w.size_system,w.size,w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.budget,w.min_discount,w.fit,w.fit,w.fit,w.kind,w.category,w.category,w.kind,w.query.toUpperCase(),w.id).all<Offer>()).results;
+    for(const offer of rows.filter(o=>matches(w,o))){const existing=found.get(offer.id);if(existing)existing.candidate.watchIds!.push(w.id);else found.set(offer.id,{offer,candidate:{watchId:w.id,watchIds:[w.id],offerId:offer.id,price:offer.price}});}
+   }
+   const receipts=new Set((await env.DB.prepare('SELECT shoe_key FROM recommendation_receipts WHERE email_hash=?').bind(hash).all<{shoe_key:string}>()).results.map(r=>r.shoe_key));
+   const models=new Set<string>(),alternatives=new Map<string,number>(),candidates:Candidate[]=[];
+   for(const {offer,candidate} of [...found.values()].sort((a,b)=>a.offer.price-b.offer.price||a.offer.id.localeCompare(b.offer.id))){
+    const key=shoeIdentity(offer).key;if(receipts.has(key)||(!models.has(key)&&models.size>=12))continue;
+    const bucket=`${key}:${comparableSize(offer)}`,count=alternatives.get(bucket)??0;if(count>=3)continue;
+    models.add(key);alternatives.set(bucket,count+1);candidates.push(candidate);if(candidates.length>=120)break;
    }
    if(candidates.length){await env.DB.prepare('INSERT INTO digest_jobs(id,run_id,email_hash,candidates,created_at) VALUES(?,?,?,?,?) ON CONFLICT(run_id,email_hash) DO NOTHING').bind(`${runId}:${hash}`,runId,hash,JSON.stringify(candidates),new Date().toISOString()).run();planned++;}
   }
@@ -33,7 +42,7 @@ export async function planDigests(env:Env,runId:string,limit=20){
  const done=recipients.length<limit;if(done)await env.DB.prepare('UPDATE scan_runs SET planning_done=1 WHERE id=?').bind(runId).run();
  return {planned,done};
 }
-export async function dispatchDigests(env:Env,runId?:string,limit=5){
+export async function dispatchDigests(env:Env,runId?:string,limit=1){
  if(!emailReady(env))return {sent:0,status:'not_configured',remaining:0};
  if(!runId)return {sent:0,status:'run_required',remaining:0};
  const run=await env.DB.prepare('SELECT started_at,status FROM scan_runs WHERE id=?').bind(runId).first<{started_at:string;status:string}>();
@@ -47,28 +56,52 @@ export async function dispatchDigests(env:Env,runId?:string,limit=5){
   const held=await env.DB.prepare('SELECT lease_until,status FROM digest_jobs WHERE id=?').bind(job.id).first<{lease_until:string;status:string}>();if(held?.lease_until!==lease||held.status!=='sending')continue;
   const subscriber=await env.DB.prepare('SELECT email,unsubscribe_token,unsubscribed FROM subscribers WHERE email_hash=?').bind(job.email_hash).first<{email:string;unsubscribe_token:string;unsubscribed:number}>();
   if(!subscriber||subscriber.unsubscribed){await suppress(env,job.id,'Unsubscribed');continue;}
-  const candidates:Candidate[]=JSON.parse(job.candidates),valid:Offer[]=[],validCandidates:Candidate[]=[];
-  for(const candidate of candidates){
-   const w=await env.DB.prepare('SELECT * FROM watches WHERE id=? AND email=? AND active=1 AND email_verified=1').bind(candidate.watchId,subscriber.email).first<Watch>();if(!w)continue;
-   const offer=await env.DB.prepare('SELECT o.* FROM offer_snapshots o JOIN sources s ON s.live_snapshot_id=o.snapshot_id AND s.id=o.source_id WHERE s.id=? AND o.id=? AND o.run_id=?').bind(candidate.offerId.split(':')[0],candidate.offerId,runId).first<Offer>();if(!offer||offer.price!==candidate.price||!matches(w,offer))continue;
-   const verified=await validateProduct(env,runId,offer),live=verified.find(o=>sameVerifiedOffer(offer,o));
-   if(!live||!matches(w,live)){blocked++;continue;}valid.push(live);validCandidates.push(candidate);if(valid.length>=6)break;
+  const candidates:Candidate[]=JSON.parse(job.candidates),valid:Offer[]=[],validCandidates=new Map<string,Candidate>();
+  const frozen=job.payload?JSON.parse(job.payload) as {ids:string[];shoeKeys?:string[]}:null;
+  const frozenIds=frozen?new Set(frozen.ids):null;
+  const watches=new Map((await env.DB.prepare('SELECT * FROM watches WHERE email=? AND active=1 AND email_verified=1 LIMIT 100').bind(subscriber.email).all<Watch>()).results.map(w=>[w.id,w]));
+  const receipts=new Set((await env.DB.prepare("SELECT shoe_key FROM recommendation_receipts WHERE email_hash=? AND (status='sent' OR job_id IS NULL OR job_id!=?)").bind(job.email_hash,job.id).all<{shoe_key:string}>()).results.map(r=>r.shoe_key));
+  const checks=new Map<string,Promise<Offer[]>>();
+  async function check(candidate:Candidate){
+   if(frozenIds&&!frozenIds.has(`${candidate.offerId}:${candidate.price}`))return;
+   const offer=await env.DB.prepare('SELECT o.* FROM offer_snapshots o JOIN sources s ON s.live_snapshot_id=o.snapshot_id AND s.id=o.source_id WHERE o.id=? AND o.run_id=?').bind(candidate.offerId,runId).first<Offer>();if(!offer||offer.price!==candidate.price||receipts.has(shoeIdentity(offer).key))return;
+   const active=(candidate.watchIds??[candidate.watchId]).map(id=>watches.get(id)).filter((w):w is Watch=>!!w&&matches(w,offer));if(!active.length)return;
+   const product=`${offer.source_id}:${offer.product_id}`;
+   if(!checks.has(product)){if(checks.size>=24)return;checks.set(product,validateProduct(env,runId!,offer));}
+   const verified=await checks.get(product)!,live=verified.find(o=>sameVerifiedOffer(offer,o));
+   if(!live||!active.some(w=>matches(w,live))){blocked++;return;}
+   valid.push(live);validCandidates.set(live.id,{...candidate,watchIds:active.filter(w=>matches(w,live)).map(w=>w.id)});
   }
-  if(!valid.length){await suppress(env,job.id,'No fresh, verified matches');continue;}
-  if(job.payload){const frozen=JSON.parse(job.payload) as {ids:string[]};if(frozen.ids.join('|')!==valid.map(o=>`${o.id}:${o.price}`).join('|')){await suppress(env,job.id,'Candidates changed during retry');continue;}}
+  // Four concurrent product checks; shared per-product promises avoid checking
+  // every size separately. Bound each request to one recipient / 24 products.
+  for(let i=0;i<candidates.length;i+=4)await Promise.all(candidates.slice(i,i+4).map(check));
+  const cards=shoeCards(valid).slice(0,6),selected:Offer[]=[];const keys:string[]=[];
+  for(const card of cards){if(await reserveRecommendation(env,job.email_hash,card.key,job.id)){keys.push(card.key);selected.push(...card.options);}}
+  if(!selected.length){await suppress(env,job.id,'No new, fresh, verified matches');continue;}
+  const ids=selected.map(o=>`${o.id}:${o.price}`);
+  if(frozen&&(frozen.ids.join('|')!==ids.join('|'))){await suppress(env,job.id,'Candidates changed during retry');continue;}
   const stop=`${env.APP_URL}/unsubscribe-all?token=${subscriber.unsubscribe_token}`;
-  const content=digestEmail(valid,env.APP_URL!,stop),payload=job.payload??JSON.stringify({from:env.EMAIL_FROM,to:[subscriber.email],subject:`A little shoe joy from Lacey 😊 — ${valid.length} ${valid.length===1?'find':'finds'} in your size`,html:content.html,text:content.text,ids:valid.map(o=>`${o.id}:${o.price}`)});
+  const content=digestEmail(selected,env.APP_URL!,stop),payload=job.payload??JSON.stringify({from:env.EMAIL_FROM,to:[subscriber.email],subject:`A little shoe joy from Lacey 😊 — ${keys.length} ${keys.length===1?'find':'finds'} in your size`,html:content.html,text:content.text,headers:{'List-Unsubscribe':`<${env.APP_URL}/api/unsubscribe?token=${subscriber.unsubscribe_token}>`,'List-Unsubscribe-Post':'List-Unsubscribe=One-Click'},ids,shoeKeys:keys});
   if(!job.payload)await env.DB.prepare('UPDATE digest_jobs SET payload=? WHERE id=?').bind(payload,job.id).run();
   if(!await reserveDelivery(env)){await env.DB.prepare("UPDATE digest_jobs SET status='queued',lease_until=NULL,error='Daily email budget reached' WHERE id=?").bind(job.id).run();return {sent,status:'daily_limit',remaining:await remaining(env,runId),blocked};}
+  // Recheck after network validation and immediately before the provider call.
+  const ready=await env.DB.prepare("SELECT j.status,s.unsubscribed FROM digest_jobs j JOIN subscribers s ON s.email_hash=j.email_hash WHERE j.id=?").bind(job.id).first<{status:string;unsubscribed:number}>();
+  if(ready?.status!=='sending'||ready.unsubscribed){await suppress(env,job.id,'Unsubscribed before delivery');continue;}
+  if(job.attempts>0&&!job.error?.startsWith('Email provider HTTP'))await env.DB.prepare("UPDATE recommendation_receipts SET status='uncertain' WHERE job_id=? AND status='reserved'").bind(job.id).run();
+  await env.DB.prepare('UPDATE digest_jobs SET attempts=attempts+1,error=NULL WHERE id=?').bind(job.id).run();
   try{
-   const message=JSON.parse(payload);delete message.ids;
+   const message=JSON.parse(payload);delete message.ids;delete message.shoeKeys;
    const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':job.id},body:JSON.stringify(message),signal:AbortSignal.timeout(15000)});
    if(!response.ok)throw new Error(`Email provider HTTP ${response.status}`);
-   const result=await response.json() as {id?:string};
-   await env.DB.batch([env.DB.prepare("UPDATE digest_jobs SET status='sent',sent_at=?,attempts=attempts+1,lease_until=NULL,error=NULL,provider_id=? WHERE id=?").bind(new Date().toISOString(),result.id??null,job.id),...validCandidates.map(c=>env.DB.prepare("INSERT INTO notifications(id,watch_id,offer_id,price,status,created_at,sent_at) SELECT ?,?,?,?,'sent',?,? WHERE EXISTS(SELECT 1 FROM watches WHERE id=?) ON CONFLICT(watch_id,offer_id,price) DO UPDATE SET status='sent',sent_at=excluded.sent_at").bind(`${c.watchId}:${c.offerId}:${c.price}`,c.watchId,c.offerId,c.price,now,now,c.watchId))]);sent++;
-  }catch(e){const failed=job.attempts>=2||Date.now()-Date.parse(job.created_at)>23*3600000;await env.DB.prepare('UPDATE digest_jobs SET status=?,attempts=attempts+1,lease_until=NULL,next_attempt_at=?,error=? WHERE id=?').bind(failed?'failed':'queued',new Date(Date.now()+Math.min(20,2**job.attempts)*60000).toISOString(),(e as Error).message,job.id).run();}
+   const result=await response.json() as {id?:string},sentAt=new Date().toISOString();
+   await env.DB.batch([
+    env.DB.prepare("UPDATE digest_jobs SET status='sent',sent_at=?,lease_until=NULL,error=NULL,provider_id=? WHERE id=?").bind(sentAt,result.id??null,job.id),
+    env.DB.prepare("UPDATE recommendation_receipts SET status='sent',sent_at=? WHERE job_id=?").bind(sentAt,job.id),
+    ...selected.flatMap(o=>{const c=validCandidates.get(o.id)!;return (c.watchIds??[c.watchId]).map(watchId=>env.DB.prepare("INSERT INTO notifications(id,watch_id,offer_id,price,status,created_at,sent_at) SELECT ?,?,?,?,'sent',?,? WHERE EXISTS(SELECT 1 FROM watches WHERE id=?) ON CONFLICT(watch_id,offer_id,price) DO UPDATE SET status='sent',sent_at=excluded.sent_at").bind(`${watchId}:${c.offerId}:${c.price}`,watchId,c.offerId,c.price,now,sentAt,watchId));})
+   ]);sent++;
+  }catch(e){if(!(e as Error).message.startsWith('Email provider HTTP'))await env.DB.prepare("UPDATE recommendation_receipts SET status='uncertain' WHERE job_id=? AND status='reserved'").bind(job.id).run();const failed=job.attempts>=2||Date.now()-Date.parse(job.created_at)>23*3600000;await env.DB.prepare('UPDATE digest_jobs SET status=?,lease_until=NULL,next_attempt_at=?,error=? WHERE id=?').bind(failed?'failed':'queued',new Date(Date.now()+Math.min(20,2**job.attempts)*60000).toISOString(),(e as Error).message,job.id).run();if(failed)await releaseUnsentRecommendations(env,job.id);}
  }
  return {sent,status:'configured',remaining:await remaining(env,runId),blocked};
 }
 async function remaining(env:Env,runId:string){return (await env.DB.prepare("SELECT count(*) n FROM digest_jobs WHERE run_id=? AND status IN('queued','sending')").bind(runId).first<{n:number}>())?.n??0;}
-async function suppress(env:Env,id:string,reason:string){await env.DB.prepare("UPDATE digest_jobs SET status='suppressed',lease_until=NULL,error=? WHERE id=?").bind(reason,id).run();}
+async function suppress(env:Env,id:string,reason:string){await releaseUnsentRecommendations(env,id);await env.DB.prepare("UPDATE digest_jobs SET status='suppressed',lease_until=NULL,error=? WHERE id=?").bind(reason,id).run();}

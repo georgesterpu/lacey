@@ -1,5 +1,6 @@
 import type { Offer, Watch } from './types';
-type Group=Offer & {sizes:string[];discount:number;sizeUrls:Record<string,string>};
+import { shoeIdentity } from './shoe-identity';
+type Group=Offer & {sizes:string[];discount:number;sizeUrls:Record<string,string>;comparisons?:Group[]};
 interface Source {id:string;name:string;url:string;adapter:string;status:string;last_success:string|null;product_count:number;error:string|null;region:'IE'|'EU';flag:string;label:string;}
 interface Dashboard {offers:Group[];sources:Source[];lastScan:string|null;watches:(Watch & {matchCount:number;email_verified:number})[];emailReady:boolean;pipeline?:{status:string;completed_at:string};nextCheck?:string;}
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
@@ -19,7 +20,12 @@ function tab(name:string){for(const n of ['finds','watches'])$(`#panel-${n}`).hi
 function value(id:string){return $<HTMLSelectElement>(`#${id}`).value;}
 function filtered(){
  const fit=value('filter-fit'),size=value('filter-size'),brand=value('filter-brand'),category=value('filter-category'),region=value('filter-region'),sort=value('sort');
- return (data?.offers??[]).filter(o=>o.discount>=20&&(category==='any'||o.category===category)&&(fit==='any'||o.fit===fit||o.fit==='unisex')&&(size==='any'||o.size_system==='UK'&&o.sizes.includes(size))&&(brand==='any'||o.brand===brand)&&(region==='any'||data!.sources.find(s=>s.id===o.source_id)?.region===region)).sort((a,b)=>sort==='price'?a.price-b.price:sort==='newest'?b.checked_at.localeCompare(a.checked_at):b.discount-a.discount||a.price-b.price);
+ const eligible=(data?.offers??[]).filter(o=>o.discount>=20&&(category==='any'||o.category===category)&&(fit==='any'||o.fit===fit||o.fit==='unisex')&&(size==='any'||o.size_system==='UK'&&o.sizes.includes(size))&&(brand==='any'||o.brand===brand)&&(region==='any'||data!.sources.find(s=>s.id===o.source_id)?.region===region));
+ const models=new Map<string,Group>();
+ // Filter sizes and shops before choosing a winner, so the displayed price and
+ // purchase link always belong to the selected size/region.
+ for(const offer of eligible.sort((a,b)=>a.price-b.price||a.id.localeCompare(b.id))){const key=shoeIdentity(offer).key,existing=models.get(key);if(!existing)models.set(key,{...offer,comparisons:[]});else if(existing.source_id!==offer.source_id&&!existing.comparisons!.some(o=>o.source_id===offer.source_id))existing.comparisons!.push(offer);}
+ return [...models.values()].sort((a,b)=>sort==='price'?a.price-b.price:sort==='newest'?b.checked_at.localeCompare(a.checked_at):b.discount-a.discount||a.price-b.price);
 }
 function sizeName(system:string){return system.startsWith('STORE:')?`${data?.sources.find(s=>`STORE:${s.id}`===system)?.name??'Shop'} size`:system;}
 function shoeTitle(o:Group){return o.title.replace(/\b(?:men[’']?s|women[’']?s)\b/gi,'').replace(/\s+(?:regular[- ]fit\s+|cushioned\s+)?(?:road\s+)?running shoes?$/i,'').replace(/\s+/g,' ').trim();}
@@ -33,7 +39,8 @@ function renderProducts(){
   const sizes=o.sizes.slice(0,8).join(' · ')+(o.sizes.length>8?` · +${o.sizes.length-8} more`:'');
   const sizeLabel=size!=='any'?`UK ${size} available`:o.size_system==='unknown'?`Sizes ${sizes} — check UK equivalent at shop`:`${o.size_system} ${sizes}`;
   const link=size!=='any'?(o.sizeUrls?.[size]??o.url):o.url;
-  return `<article class="product-card"><div class="product-photo"><span class="discount-tag">${o.discount}% off</span>${o.image?`<img src="${esc(o.image)}" alt="${esc(o.title)}${o.colour?' in '+esc(o.colour):''}" loading="lazy" width="350" height="230">`:''}</div><div class="product-content">${shopIdentity(shop)}<h3>${esc(shoeTitle(o))}</h3><p class="shoe-fit">${esc(fitNames[o.fit])}</p><p class="product-price">${euro(o.price)} <del aria-label="Shop’s reference price ${euro(o.reference_price!)}">${euro(o.reference_price!)}</del></p><div class="product-sizes">${esc(sizeLabel)}</div><div class="product-buttons"><a class="button button-dark" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Shop at ${esc(shop.name)} <span aria-hidden="true">↗</span></a><button class="watch-shoe" data-watch-offer="${esc(o.id)}" aria-label="Watch ${esc(o.title)} for a deal">Watch this shoe</button></div></div></article>`;
+  const comparison=o.comparisons?.length?`<details class="shop-comparison"><summary>Other shops (${o.comparisons.length})</summary>${o.comparisons.map(v=>{const s=data!.sources.find(s=>s.id===v.source_id)!;return `<a href="${esc(size!=='any'?(v.sizeUrls[size]??v.url):v.url)}" target="_blank" rel="noopener noreferrer"><span>${s.flag} ${esc(s.name)}</span><strong>${euro(v.price)} ↗</strong><small>${esc(v.size_system==='unknown'?'Shop size':v.size_system)} ${esc(size!=='any'?size:v.sizes.join(' · '))}</small></a>`;}).join('')}</details>`:'';
+  return `<article class="product-card"><div class="product-photo"><span class="discount-tag">${o.discount}% off</span>${o.image?`<img src="${esc(o.image)}" alt="${esc(o.title)}${o.colour?' in '+esc(o.colour):''}" loading="lazy" width="350" height="230">`:''}</div><div class="product-content">${shopIdentity(shop)}<h3>${esc(shoeTitle(o))}</h3><p class="shoe-fit">${esc(fitNames[o.fit])}</p><p class="product-price">${euro(o.price)} <del aria-label="Shop’s reference price ${euro(o.reference_price!)}">${euro(o.reference_price!)}</del></p><div class="product-sizes">${esc(sizeLabel)}</div><div class="product-buttons"><a class="button button-dark" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Shop at ${esc(shop.name)} <span aria-hidden="true">↗</span></a><button class="watch-shoe" data-watch-offer="${esc(o.id)}" aria-label="Watch ${esc(o.title)} for a deal">Watch this shoe</button></div>${comparison}</div></article>`;
  }).join(''):`<div class="empty-state"><h3>${data?.lastScan?'No matches. Yet 👀':'The first check is on its way.'}</h3><p>${data?.lastScan?'Try another filter, or save a watch. We’ll keep our eyes peeled.':'Save your size and we’ll look for a deal.'}</p><button class="button button-dark" data-action="new-watch">Watch for a deal <span aria-hidden="true">↗</span></button></div>`;
  $('#show-more').hidden=shown>=offers.length;
 }

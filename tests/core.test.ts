@@ -76,3 +76,14 @@ test('scheduler requires its own secret, and failures admit only three attempts'
  globalThis.fetch=(async()=>{calls++;return new Response('Temporary source failure',{status:503});}) as unknown as typeof fetch;
  try{for(let n=0;n<3;n++){const r=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(r.status).toBe('failed');}expect(calls).toBe(9);const last=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(last.skipped).toBe(true);expect(calls).toBe(9);}finally{globalThis.fetch=original;}
 });
+
+test('signed global unsubscribe needs no identity and supports mail-client one-click POST',async()=>{
+ const env=await database();await handle(request('/api/watches','POST','alice',watchInput),env,'');await handle(request('/api/watches','POST','bob',watchInput),env,'');
+ await env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?)').bind('recipient',watchInput.email,'signed-stop-token').run();
+ await handle(request('/unsubscribe-all?token=signed-stop-token'),env,'');expect((await env.DB.prepare('SELECT unsubscribed FROM subscribers').first<{unsubscribed:number}>())!.unsubscribed).toBe(0);
+ const res=await handle(new Request('https://shoe.test/api/unsubscribe?token=signed-stop-token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Origin:'https://mail.example.test'},body:'List-Unsubscribe=One-Click'}),env,'');
+ expect(res.status).toBe(200);expect(await res.text()).toContain('You’re unsubscribed');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE active=1').first<{n:number}>())!.n).toBe(0);expect((await env.DB.prepare('SELECT unsubscribed FROM subscribers').first<{unsubscribed:number}>())!.unsubscribed).toBe(1);
+ expect((await handle(request('/unsubscribe-all?token=signed-stop-token','POST'),env,'')).status).toBe(200);
+ const form=new FormData();form.set('List-Unsubscribe','One-Click');expect((await handle(new Request('https://shoe.test/api/unsubscribe?token=signed-stop-token',{method:'POST',body:form}),env,'')).status).toBe(200);
+ expect((await handle(request('/api/unsubscribe?token=signed-stop-token'),env,'')).status).toBe(303);
+});

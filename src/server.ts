@@ -9,6 +9,8 @@ import { digestEmail } from './email-template';
 import { nextCheck } from './schedule';
 import { sources as approvedSources } from './sources';
 import { currentDeals } from './catalogue';
+import { shoeCards } from './shoe-identity';
+import { releaseUnsentRecommendations } from './recommendations';
 import html from '../public/index.html' with {type:'text'};
 import css from '../public/style.css' with {type:'text'};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
@@ -29,7 +31,7 @@ export async function handle(request:Request,env:Env,clientCode:string):Promise<
 }
 async function route(request:Request,env:Env,clientCode:string,user:string):Promise<Response> {
  const url=new URL(request.url);const path=url.pathname;const method=request.method;
- if(method!=='GET'&&request.headers.get('Origin')&&request.headers.get('Origin')!==url.origin)return json({error:'Please submit from this website'},403);
+ if(path!=='/api/unsubscribe'&&path!=='/unsubscribe-all'&&method!=='GET'&&request.headers.get('Origin')&&request.headers.get('Origin')!==url.origin)return json({error:'Please submit from this website'},403);
  if(path==='/style.css')return new Response(css,{headers:{'Content-Type':'text/css','Cache-Control':'no-cache'}});
  if(path==='/app.js')return new Response(clientCode,{headers:{'Content-Type':'text/javascript','Cache-Control':'no-cache'}});
  if(path.startsWith('/api/internal/')){
@@ -44,7 +46,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   return json({error:'Not found'},404);
  }
  if(path==='/email-preview'){
-  const seen=new Set<string>();const offers=(await currentDeals(env,2000)).sort((a,b)=>a.price-b.price).filter(o=>{const key=`${o.source_id}:${o.product_id}`;if(seen.has(key))return false;seen.add(key);return true;}).slice(0,3);
+  const offers=shoeCards(await currentDeals(env,2000)).slice(0,3).flatMap(c=>c.options.slice(0,3));
   return new Response(digestEmail(offers,env.APP_URL??url.origin,'/#my-watches',true).html,{headers:{'Content-Type':'text/html','Cache-Control':'no-store'}});
  }
  if(path==='/confirm-email'){
@@ -55,12 +57,21 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id),env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())]);return page('You’re on the list 😊','We’ll email you when your shoe watch finds a match. Happy miles!');}
   return page('Confirm your shoe alert.','One click, and we’ll keep an eye out for you.','Confirm my email');
  }
- if(path==='/unsubscribe-all'){
+ if(path==='/unsubscribe-all'||path==='/api/unsubscribe'){
   const token=url.searchParams.get('token');if(!token||token.length>100)return page('This link is invalid.','Use the unsubscribe link in your email.');
   const person=await env.DB.prepare('SELECT email,email_hash FROM subscribers WHERE unsubscribe_token=?').bind(token).first<{email:string;email_hash:string}>();
   if(!person)return page('You’re all set.','This email subscription is no longer active.');
-  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE subscribers SET unsubscribed=1 WHERE email_hash=?').bind(person.email_hash),env.DB.prepare('UPDATE watches SET active=0 WHERE email=?').bind(person.email),env.DB.prepare("UPDATE digest_jobs SET status='suppressed',error='Unsubscribed' WHERE email_hash=? AND status='queued'").bind(person.email_hash)]);return page('All paused. No hard feelings 😊','Sale emails have stopped. Your watches are still here if you need them.');}
-  return page('Stop sale emails?','This pauses sale alerts for your email address.','Stop sale emails');
+  if(method==='POST'){
+   if(path==='/api/unsubscribe'){try{if((await request.formData()).get('List-Unsubscribe')!=='One-Click')return json({error:'Invalid unsubscribe request'},400);}catch{return json({error:'Invalid unsubscribe form'},400);}}
+   await env.DB.batch([env.DB.prepare('UPDATE subscribers SET unsubscribed=1 WHERE email_hash=?').bind(person.email_hash),env.DB.prepare('UPDATE watches SET active=0 WHERE email=?').bind(person.email),env.DB.prepare("UPDATE digest_jobs SET status='suppressed',lease_until=NULL WHERE email_hash=? AND status IN('queued','sending')").bind(person.email_hash)]);
+   const jobs=(await env.DB.prepare("SELECT id FROM digest_jobs WHERE email_hash=? AND status='suppressed'").bind(person.email_hash).all<{id:string}>()).results;
+   for(const job of jobs)await releaseUnsentRecommendations(env,job.id);
+   return page('You’re unsubscribed 😊','All sale emails have stopped. You don’t need to do anything else.');
+  }
+  if(method!=='GET')return new Response('Use GET or POST',{status:405});
+  if(path==='/api/unsubscribe')return Response.redirect(`${url.origin}/unsubscribe-all?token=${encodeURIComponent(token)}`,303);
+  // A mail scanner following GET links must never unsubscribe a person.
+  return page('Stop all sale emails?','No sign-in. No email to type. One button and you’re done.','Unsubscribe — stop all sale emails');
  }
  if(path==='/unsubscribe'){
   const token=url.searchParams.get('token');if(!token||token.length>100)return new Response('Invalid link',{status:400});
@@ -78,7 +89,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
     env.DB.prepare('SELECT id,kind,query,category,fit,size_system,size,colour,budget,min_discount,active,email_verified,created_at FROM watches WHERE owner_id=? ORDER BY created_at DESC').bind(user).all<Watch>()
    ]);
    const pipeline=await env.DB.prepare('SELECT id,status,started_at,completed_at FROM scan_runs ORDER BY started_at DESC LIMIT 1').first();
-   return json({offers:groupOffers(rows.results),sources:sourceRows.results.map(s=>({...s,...shopLocation(String(s.id))})),lastScan:last?.value??null,nextCheck:nextCheck(),pipeline,watches:watches.results.map(w=>({...w,matchCount:rows.results.filter(o=>matches(w,o)).length})),emailReady:emailReady(env)});
+   return json({offers:groupOffers(rows.results),sources:sourceRows.results.map(s=>({...s,...shopLocation(String(s.id))})),lastScan:last?.value??null,nextCheck:nextCheck(),pipeline,watches:watches.results.map(w=>({...w,matchCount:shoeCards(rows.results.filter(o=>matches(w,o))).length})),emailReady:emailReady(env)});
   }
   if(path==='/api/health'&&method==='GET'){
    const run=await env.DB.prepare('SELECT id,status,started_at,completed_at,attempts FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<{id:string;status:string;completed_at:string|null}>();
