@@ -23,6 +23,7 @@ export async function cleanup(env:Env,now=new Date()) {
   env.DB.prepare('DELETE FROM email_confirmations WHERE expires_at<?').bind(current),
   env.DB.prepare('DELETE FROM delivery_budget WHERE day<?').bind(ninetyDays.slice(0,10)),
   ...['watch','feedback'].map(action=>env.DB.prepare('DELETE FROM app_state WHERE key LIKE ? AND substr(key,?,13)<?').bind(`rate:${action}:%`,`rate:${action}:`.length+64+2,sevenDays.slice(0,13))),
+  env.DB.prepare("DELETE FROM app_state WHERE key LIKE 'email-confirm:%' AND substr(key,?,13)<?").bind('email-confirm:'.length+64+2,sevenDays.slice(0,13)),
   env.DB.prepare("DELETE FROM app_state WHERE key LIKE 'confirm:%' AND substr(key,?,10)<?").bind('confirm:'.length+64+2,sevenDays.slice(0,10)),
   env.DB.prepare("DELETE FROM app_state WHERE key LIKE 'crawl:%' AND json_extract(value,'$.createdAt')<?").bind(sevenDays),
   env.DB.prepare("DELETE FROM app_state WHERE key LIKE 'scan-window:%' OR key='scan_lock'"),

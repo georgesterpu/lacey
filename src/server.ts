@@ -26,7 +26,7 @@ export async function handle(request:Request,env:Env,clientCode:string):Promise<
  const identity=await device(request);
  const response=await route(request,env,clientCode,identity.owner);
  // Random device capability, never an email address or a browser-readable identifier.
- if(new URL(request.url).pathname==='/api/dashboard')response.headers.set('Set-Cookie',identity.cookie);
+ if(['/api/dashboard','/confirm-email'].includes(new URL(request.url).pathname))response.headers.set('Set-Cookie',identity.cookie);
  response.headers.set('X-Content-Type-Options','nosniff');
  response.headers.set('Referrer-Policy',signedEmailRoutes.has(new URL(request.url).pathname)?'strict-origin':'strict-origin-when-cross-origin');
  return response;
@@ -57,14 +57,26 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(path==='/confirm-email'){
   if(method!=='GET'&&method!=='POST')return new Response('Use GET or POST',{status:405});
   const token=url.searchParams.get('token');if(!token||!/^([a-f0-9]{64})$/.test(token))return new Response('This confirmation link is invalid.',{status:400});
-  const row=await env.DB.prepare('SELECT c.watch_id,w.owner_id,w.email FROM email_confirmations c JOIN watches w ON w.id=c.watch_id WHERE c.token_hash=? AND c.expires_at>?').bind(await digest(token),new Date().toISOString()).first<{watch_id:string;owner_id:string;email:string}>();
-  if(!row)return page('This link has expired.','Open your watchlist to request a new confirmation.');
-  // GET is a confirmation screen; email security scanners cannot opt people in.
-  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id),env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())]);const watches=(await env.DB.prepare('SELECT * FROM watches WHERE owner_id=? AND email=? AND active=1').bind(row.owner_id,row.email).all<Watch>()).results;
+  const hash=await digest(token);
+  const row=await env.DB.prepare('SELECT owner_id,email FROM email_identities WHERE token_hash=? AND expires_at>?').bind(hash,new Date().toISOString()).first<{owner_id:string;email:string}>()
+   ??await env.DB.prepare('SELECT w.owner_id,w.email FROM email_confirmations c JOIN watches w ON w.id=c.watch_id WHERE c.token_hash=? AND c.expires_at>?').bind(hash,new Date().toISOString()).first<{owner_id:string;email:string}>();
+  if(!row)return page('This link has expired.','Open your watchlist to request a fresh verification email.');
+  // The email link proves possession, but a mail scanner's GET cannot opt in.
+  if(method==='POST'){
+   const now=new Date().toISOString();
+   await env.DB.batch([
+    ...[...new Set([row.owner_id,user])].flatMap(owner=>[
+     env.DB.prepare("INSERT INTO email_identities(owner_id,email,verified_at,delivery_state) VALUES(?,?,?,'verified') ON CONFLICT(owner_id,email) DO UPDATE SET verified_at=excluded.verified_at,delivery_state='verified',token=NULL,error_code=NULL,lease_until=NULL").bind(owner,row.email,now),
+     env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(owner,row.email)
+    ]),
+    env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id IN(SELECT id FROM watches WHERE owner_id=? AND email=?)').bind(row.owner_id,row.email),
+    env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())
+   ]);
+   const watches=(await env.DB.prepare('SELECT * FROM watches WHERE owner_id=? AND email=? AND active=1').bind(row.owner_id,row.email).all<Watch>()).results;
    const cards=shoeCards((await currentDeals(env)).filter(o=>watches.some(w=>matches(w,o))));
    const preview=cards.slice(0,3).map(c=>`<article class="confirmation-find"><h2>${escapeHtml(c.offer.title)}</h2>${c.options.map(o=>`<a href="${escapeHtml(o.url)}" target="_blank" rel="noopener noreferrer">${shopFlag(o.source_id)} ${escapeHtml(approvedSources.find(s=>s.id===o.source_id)?.name??o.source_id)} · ${escapeHtml(o.size_system==='unknown'?'Shop size':o.size_system)} ${escapeHtml(o.size)} · €${(o.price/100).toFixed(2)} ↗</a>`).join('')}</article>`).join('');
-   return page('You’re on the list 😊',cards.length?`Your email is confirmed. ${cards.length} matching ${cards.length===1?'shoe':'shoes'} in the latest check. Here’s a peek:`:'Your email is confirmed and your watches are saved. No matching deals right now. We’ll keep looking.',undefined,preview+'<p>Checks at 08:00 and 20:00, Dublin time. We only send sale emails for new matches—no empty emails.</p>');}
-  return page('Confirm your shoe alert.','One click, and we’ll keep an eye out for you.','Confirm my email');
+   return page('Email confirmed 😊',cards.length?`Your alerts are active. ${cards.length} matching ${cards.length===1?'shoe':'shoes'} in the latest check. Here’s a peek:`:'Your alerts are active. No matching deals right now. New alerts for this email will activate immediately in this browser.',undefined,preview+'<p>Checks at 08:00 and 20:00, Dublin time. We only send sale emails for new matches—no empty emails.</p>');}
+  return page('Confirm your email.','One click, and we’ll keep an eye out for you.','Confirm my email');
  }
  if(path==='/unsubscribe-all'||path==='/api/unsubscribe'){
   const token=url.searchParams.get('token');if(!token||token.length>100)return page('This link is invalid.','Use the unsubscribe link in your email.');
@@ -98,7 +110,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
     env.DB.prepare('SELECT id,kind,query,category,fit,size_system,size,colour,budget,min_discount,active,email_verified,created_at FROM watches WHERE owner_id=? ORDER BY created_at DESC').bind(user).all<Watch>()
    ]);
    const pipeline=await env.DB.prepare('SELECT id,status,started_at,completed_at FROM scan_runs ORDER BY started_at DESC LIMIT 1').first();
-   return json({offers:groupOffers(rows.results),sources:sourceRows.results.map(s=>({...s,...shopLocation(String(s.id))})),lastScan:last?.value??null,nextCheck:nextCheck(),pipeline,watches:watches.results.map(w=>({...w,matchCount:shoeCards(rows.results.filter(o=>matches(w,o))).length})),emailReady:emailReady(env)});
+   return json({offers:groupOffers(rows.results),sources:sourceRows.results.map(s=>({...s,...shopLocation(String(s.id))})),lastScan:last?.value??null,nextCheck:nextCheck(),pipeline,verifications:(await env.DB.prepare(`SELECT min(w.id) watch_id,coalesce(i.delivery_state,'not_sent') status FROM watches w LEFT JOIN email_identities i ON i.owner_id=w.owner_id AND i.email=w.email WHERE w.owner_id=? AND w.email_verified=0 AND w.active=1 GROUP BY w.email`).bind(user).all()).results,watches:watches.results.map(w=>({...w,matchCount:shoeCards(rows.results.filter(o=>matches(w,o))).length})),emailReady:emailReady(env)});
   }
   if(path==='/api/health'&&method==='GET'){
    const run=await env.DB.prepare('SELECT id,status,started_at,completed_at,attempts FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<{id:string;status:string;completed_at:string|null}>();
@@ -120,7 +132,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
    const count=await env.DB.prepare('SELECT count(*) AS n FROM watches WHERE owner_id=?').bind(user).first<{n:number}>();if((count?.n??0)>=10)return json({error:'You can keep up to 10 watches. Remove one to add another.'},400);
    if(!await rateLimit(env,request,'watch',60))return json({error:'Too many watches created. Please try again in an hour.'},429);
    const id=crypto.randomUUID(),now=new Date().toISOString();
-   const verified=await env.DB.prepare('SELECT id FROM watches WHERE owner_id=? AND email=? AND email_verified=1 LIMIT 1').bind(user,email).first();
+   const verified=await env.DB.prepare('SELECT owner_id FROM email_identities WHERE owner_id=? AND email=? AND verified_at IS NOT NULL').bind(user,email).first();
    await env.DB.prepare('INSERT INTO watches(id,owner_id,email,kind,query,category,fit,size_system,size,colour,budget,min_discount,created_at,consent_at,unsubscribe_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,user,email,kind,query,category,fit,sizeSystem,String(Number(size)),String(data.colour??'').trim().slice(0,60),budget,min,now,now,crypto.randomUUID()).run();
    if(verified){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE id=?').bind(id),env.DB.prepare('UPDATE subscribers SET unsubscribed=0 WHERE email_hash=?').bind(await digest(email))]);return json({id,confirmation:'confirmed'},201);}
    return json({id,confirmation:await sendConfirmation(env,{id,email})},201);
@@ -131,7 +143,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   if(match&&method==='DELETE'){await env.DB.prepare('DELETE FROM watches WHERE id=? AND owner_id=?').bind(match[1],user).run();return json({ok:true});}
   if(match&&method==='PATCH'){const data=await body(request);if(typeof data.active!=='boolean')return json({error:'Invalid state'},400);const watch=await env.DB.prepare('SELECT email,email_verified FROM watches WHERE id=? AND owner_id=?').bind(match[1],user).first<{email:string;email_verified:number}>();if(!watch)return json({error:'Watch not found'},404);const writes=[env.DB.prepare('UPDATE watches SET active=? WHERE id=? AND owner_id=?').bind(data.active?1:0,match[1],user)];if(data.active&&watch.email_verified)writes.push(env.DB.prepare('UPDATE subscribers SET unsubscribed=0 WHERE email_hash=?').bind(await digest(watch.email)));await env.DB.batch(writes);return json({ok:true});}
   const resend=path.match(/^\/api\/watches\/([a-f0-9-]{36})\/confirm$/);
-  if(resend&&method==='POST'){const watch=await env.DB.prepare('SELECT id,email FROM watches WHERE id=? AND owner_id=? AND email_verified=0').bind(resend[1],user).first<Pick<Watch,'id'|'email'>>();if(!watch)return json({error:'Watch not found'},404);return json({confirmation:await sendConfirmation(env,watch)});}
+  if(resend&&method==='POST'){const watch=await env.DB.prepare('SELECT id,email,owner_id FROM watches WHERE id=? AND owner_id=? AND email_verified=0').bind(resend[1],user).first<Pick<Watch,'id'|'email'>>();if(!watch)return json({error:'Watch not found'},404);return json({confirmation:await sendConfirmation(env,watch,true)});}
   if(path==='/api/feedback'&&method==='POST'){
    const data=await body(request);const message=String(data.message??'').trim(),kind=String(data.kind??'idea');
    if(message.length<5||message.length>2000||!['idea','source','issue'].includes(kind))return json({error:'Write between 5 and 2,000 characters'},400);

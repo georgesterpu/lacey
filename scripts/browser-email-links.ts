@@ -19,7 +19,7 @@ try{
  assert.ok(await view.evaluate('document.body?.innerText?.includes("lacey 😊") && document.body?.innerText?.includes("we’ll keep an eye out")'));
  assert.equal(Number((await client.execute({sql:'SELECT email_verified FROM watches WHERE id=?',args:[id]})).rows[0].email_verified),0);
  await Bun.write('screenshots/confirmation-before.png',await view.screenshot());
- await view.click('form button');await until(view,'document.body?.innerText?.includes("You’re on the list")');
+ await view.click('form button');await until(view,'document.body?.innerText?.includes("Email confirmed")');
  assert.equal(Number((await client.execute({sql:'SELECT email_verified FROM watches WHERE id=?',args:[id]})).rows[0].email_verified),1);
  await Bun.write('screenshots/confirmation-success.png',await view.screenshot());console.log('Confirmation: UTF-8 text, native form POST, stored verification, success page.');
  const person=(await client.execute({sql:'SELECT unsubscribe_token,unsubscribed FROM subscribers WHERE email_hash=?',args:[hash]})).rows[0];
