@@ -96,7 +96,8 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
    const checks=run?(await env.DB.prepare('SELECT source_id,status,products,variants,rejected,details,completed_at FROM source_runs WHERE run_id=?').bind(run.id).all()).results:[];
    const delivery=run?(await env.DB.prepare('SELECT status,count(*) count FROM digest_jobs WHERE run_id=? GROUP BY status').bind(run.id).all()).results:[];
    const housekeeping=await env.DB.prepare("SELECT value FROM app_state WHERE key='last_cleanup'").first<{value:string}>();
-   return json({run,checks,delivery,lastCleanup:housekeeping?.value??null,nextCheck:nextCheck(),emailReady:emailReady(env),stale:run?.status==='failed'||!run?.completed_at||Date.now()-Date.parse(run.completed_at)>14*3600000});
+   const backup=await env.DB.prepare("SELECT value FROM app_state WHERE key='last_backup'").first<{value:string}>();
+   return json({run,checks,delivery,lastCleanup:housekeeping?.value??null,lastBackup:backup?.value??null,nextCheck:nextCheck(),emailReady:emailReady(env),stale:run?.status==='failed'||!run?.completed_at||Date.now()-Date.parse(run.completed_at)>14*3600000});
   }
   if(!request.headers.get('Cookie')?.match(/(?:^|;\s*)brave_device=[a-f0-9]{64}(?:;|$)/))return json({error:'Please allow cookies for this site, then refresh to save your watch.'},401);
   if(method!=='GET'&&method!=='DELETE'&&!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'Please submit using the form'},415);

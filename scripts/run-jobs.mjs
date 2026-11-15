@@ -1,3 +1,4 @@
+import {mkdir,writeFile} from 'node:fs/promises';
 // This runner contains no model SDK, prompt, agent or browser automation.
 // The API is idempotent by scheduled slot; every retry resumes stored state.
 const base=process.env.APP_URL;
@@ -24,4 +25,10 @@ if(!complete)throw new Error('Dispatch page budget exhausted; stored jobs can re
 const response=await fetch(new URL('/api/health',base),{signal:AbortSignal.timeout(30000)});if(!response.ok)throw new Error('Health readback failed');const health=await response.json();
 console.log(JSON.stringify({stage:'verified',run:health.run,checks:health.checks,delivery:health.delivery,emailReady:health.emailReady}));
 if(health.run?.id!==scan.runId||health.stale)throw new Error('Scan readback is stale or inconsistent');
+// Keep customer data recoverable independently of deployment artifacts.
+const backup=await fetch(new URL('/api/internal/backup',base),{method:'POST',headers:{Authorization:`Bearer ${secret}`},signal:AbortSignal.timeout(90000)});
+if(!backup.ok)throw new Error(`Encrypted backup: HTTP ${backup.status}`);
+const bytes=new Uint8Array(await backup.arrayBuffer());if(new TextDecoder().decode(bytes.slice(0,8))!=='LACEY01\n')throw new Error('Invalid encrypted backup response');
+await mkdir('.data/backups',{recursive:true});await writeFile(`.data/backups/lacey-${scan.runId}.enc`,bytes,{mode:0o600});
+console.log(JSON.stringify({stage:'backed_up',bytes:bytes.byteLength}));
 if(scan.status==='partial')throw new Error('A shop failed validation; healthy sources were processed. Inspect source checks.');

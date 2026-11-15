@@ -23,3 +23,11 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node scripts/run-jobs.mjs
+      - name: Retain encrypted customer-data backup
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lacey-backup-${{ github.run_id }}
+          path: .data/backups/*.enc
+          retention-days: 14
+          if-no-files-found: warn

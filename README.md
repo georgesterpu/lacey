@@ -19,7 +19,7 @@ Read the [personality notes](docs/personality.md), [Vercel handoff](docs/deploym
 
 ## Local development
 
-Bun 1.4.4 and TypeScript 7.0.2 are pinned. The browser uses plain TypeScript/CSS. Local handlers run with Bun/native SQLite; Sites hosts the same Request/Response handlers in a Worker with D1.
+Bun 1.4.4 and TypeScript 7.0.2 are pinned. The browser uses plain TypeScript/CSS. Local handlers run with Bun/native SQLite. Vercel runs Bun Functions with separate managed Turso databases for production and preview. The former Sites Worker/D1 deployment is retained during the domain transition.
 
 ```sh
 bun install --frozen-lockfile
@@ -60,7 +60,7 @@ GitHub scheduling can be delayed, so the app displays actual timestamps rather t
 | `EMAIL_FROM` | Verified sender address/domain |
 | `DAILY_EMAIL_LIMIT` | Hard global delivery-attempt budget; default 100 |
 
-Email credentials are not provisioned or fabricated. With no sender, watches save and the UI accurately reports email delivery unavailable. `january.ie` has not been changed.
+Email credentials are not provisioned or fabricated. With no sender, watches save and the UI accurately reports email delivery unavailable. `january.ie` is connected to the isolated Vercel project; DNS and the dedicated sender must be verified before email is enabled.
 
 ## Source map
 
@@ -79,3 +79,7 @@ Markdown percentages compare with retailer reference prices and exclude delivery
 ## Catalogue housekeeping
 
 Every completed or failed scan runs bounded cleanup; catch-up calls for already-completed slots also run it. The health response exposes `lastCleanup`. Old snapshots and link checks retain two days; histories, terminal notifications and unreferenced run records retain 90 days. Obsolete legacy product rows, expired confirmation tokens and old rate-limit counters are removed. Active watch preferences stay intact. See the reliability plan for the exact rules.
+
+## Vercel production and recoverable data
+
+See [the production runbook](docs/deployment-handoff.md) for the project, isolated production/preview Turso databases, immutable checksummed migrations, encrypted backups, tested empty-database restoration, domain DNS records and email setup. Builds never reset the database. `bun run build:vercel` builds the Bun app; `bun run db:migrate` performs explicit, backed-up schema changes. Preview cannot send emails.

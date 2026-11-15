@@ -1,6 +1,29 @@
 {
-  "name":"lacey", "private":true, "type":"module", "version":"0.4.0",
-  "packageManager":"bun@1.4.4", "engines":{"bun":">=1.4.4"},
-  "scripts":{"dev":"bun --watch src/local.ts","start":"bun src/local.ts","build":"bun scripts/build.ts","check":"tsc --noEmit","test":"bun test","scan":"bun scripts/run-jobs.mjs"},
-  "devDependencies":{"@types/bun":"1.4.4","typescript":"7.0.2"}
+  "name": "lacey",
+  "private": true,
+  "type": "module",
+  "version": "0.4.0",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "scripts": {
+    "dev": "bun --watch src/local.ts",
+    "start": "bun src/local.ts",
+    "build": "bun scripts/build.ts",
+    "check": "tsc --noEmit",
+    "test": "bun test",
+    "scan": "bun scripts/run-jobs.mjs",
+    "build:vercel": "bun scripts/build-vercel.ts",
+    "db:migrate": "bun scripts/database.ts migrate",
+    "db:backup": "bun scripts/database.ts backup",
+    "db:restore": "bun scripts/database.ts restore"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@libsql/client": "0.18.0"
+  }
 }
