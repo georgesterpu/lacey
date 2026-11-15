@@ -57,7 +57,7 @@ export async function dispatchDigests(env:Env,runId?:string,limit=5){
   if(!valid.length){await suppress(env,job.id,'No fresh, verified matches');continue;}
   if(job.payload){const frozen=JSON.parse(job.payload) as {ids:string[]};if(frozen.ids.join('|')!==valid.map(o=>`${o.id}:${o.price}`).join('|')){await suppress(env,job.id,'Candidates changed during retry');continue;}}
   const stop=`${env.APP_URL}/unsubscribe-all?token=${subscriber.unsubscribe_token}`;
-  const content=digestEmail(valid,env.APP_URL!,stop),payload=job.payload??JSON.stringify({from:env.EMAIL_FROM,to:[subscriber.email],subject:`Shoehoo! ${valid.length} ${valid.length===1?'find':'finds'} in your size`,html:content.html,text:content.text,ids:valid.map(o=>`${o.id}:${o.price}`)});
+  const content=digestEmail(valid,env.APP_URL!,stop),payload=job.payload??JSON.stringify({from:env.EMAIL_FROM,to:[subscriber.email],subject:`A little shoe joy from Lacey 😊 — ${valid.length} ${valid.length===1?'find':'finds'} in your size`,html:content.html,text:content.text,ids:valid.map(o=>`${o.id}:${o.price}`)});
   if(!job.payload)await env.DB.prepare('UPDATE digest_jobs SET payload=? WHERE id=?').bind(payload,job.id).run();
   if(!await reserveDelivery(env)){await env.DB.prepare("UPDATE digest_jobs SET status='queued',lease_until=NULL,error='Daily email budget reached' WHERE id=?").bind(job.id).run();return {sent,status:'daily_limit',remaining:await remaining(env,runId),blocked};}
   try{

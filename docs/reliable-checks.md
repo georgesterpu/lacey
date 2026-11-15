@@ -1,6 +1,6 @@
 # Reliable checks and predictable growth
 
-This is the implemented pipeline and the next scaling plan. The consumer app is called **Shoehoo** as a working name; no domain or trademark availability is claimed.
+This is the implemented pipeline and the next scaling plan. The consumer app is called **Lacey** as a working name; no domain or trademark availability is claimed.
 
 ```mermaid
 flowchart LR
@@ -28,9 +28,9 @@ The previous ChatGPT automation must be disabled after the new runner is verifie
 
 The two checked-in real retailer fixtures cover adult and kids products. Tests also cover malformed prices, changed availability types, mismatched units, source failure, interrupted writes, stale/changed candidates, missing links, grouped recipients, repeat dispatch, budget limits, consent and email opt-in. CI runs type checking, fixtures/behavior tests and the build on every main-branch code change and pull request.
 
-Checks include stable product/variant IDs; source-owned product handles; option names and positions; strict decimal-string money parsing into integer cents; actual boolean availability; numeric supported sizes; fit/age group; reference price greater than selling price; and an allowlisted product URL. More than 5% malformed products quarantines that source snapshot. A completed catalogue shrinking by over 50% is held for review. Excluded/unsupported product counts are recorded separately from malformed records. For example, width-decorated size labels are held rather than reading the number and ignoring the width.
+Checks include stable product/variant IDs; source-owned product handles; option names and positions; strict decimal-string money parsing into integer cents; actual boolean availability; numeric supported sizes; department/age group; reference price greater than selling price; and an allowlisted product URL. More than 5% malformed products quarantines that source snapshot. A completed catalogue shrinking by over 50% is held for review. Excluded/unsupported product counts are recorded separately from malformed records. For example, width-decorated size labels are held rather than reading the number and ignoring the width.
 
-Each source is collected into a new `offer_snapshots` namespace. Only after all batches write and validation passes does one transaction move `sources.live_snapshot_id`. Failed writes cannot publish half a catalogue. A failed shop retains its previous live snapshot for browsing. Email matching additionally requires the **current run ID**; old data from a failed shop is not emailed merely because it is less than 30 hours old.
+Each source is collected into a new `offer_snapshots` namespace. Only after all batches write and validation passes does one transaction move `sources.live_snapshot_id`. Failed writes cannot publish half a catalogue. A failed shop retains its previous snapshot for recovery, but its public deals are hidden until a successful check. Public deals also exclude known failed page checks and variants whose latest product verification reports changed prices or stock. Email matching additionally requires the **current run ID**; old data from a failed shop is not emailed merely because it is less than 30 hours old.
 
 Kids use a separate fit, and an adult “either fit” watch never matches kids. Universal UK/US/EU conversion is not used. UK watches require explicit or confirmed UK units. A watch started from a shop with unlabelled numeric sizes is explicitly labelled **Size at [shop] (as listed)** and scoped to that source/model, using `STORE:<source>` internally. That allows a parent to watch the actual listed size without claiming it is a UK equivalent. Infant/letter/fraction labels outside the supported contract remain held.
 
@@ -42,7 +42,7 @@ The product check is cached per run/product for **15 minutes**, shared across re
 
 ## Digests, retries and spending
 
-Matching uses indexed size, fit and price buckets instead of loading the catalogue for every watch. Planning pages through 20 distinct verified email addresses at a time. All active watches for one email are combined into at most six display cards (from up to twelve candidates), so ten watches do not become ten emails. A unique `(run_id, email_hash)` outbox key means at most one digest per recipient per scheduled slot, hence at most **two sale digests per Dublin calendar day**. Confirmations are separate transactional messages but share the delivery budget.
+Matching uses indexed size, department and price buckets instead of loading the catalogue for every watch. Planning pages through 20 distinct verified email addresses at a time. All active watches for one email are combined into at most six display cards (from up to twelve candidates), so ten watches do not become ten emails. A unique `(run_id, email_hash)` outbox key means at most one digest per recipient per scheduled slot, hence at most **two sale digests per Dublin calendar day**. Confirmations are separate transactional messages but share the delivery budget.
 
 Recipients receive a digest only when a qualifying offer has not already been sent at the same or a lower price for that watch. The outbox stores progress. Each delivery is leased, rechecks active/verified watches and unsubscribe state, and freezes its payload before the first provider request. Retries retain the provider idempotency key and exact payload. Changed retry candidates are suppressed rather than rewriting the message under the same key. Provider acceptance is recorded separately from intended sends. An accepted API request is not a guarantee of inbox delivery; bounce/complaint webhooks are the next email-provider integration.
 
@@ -62,7 +62,7 @@ For `P` catalogue variants, `W` watches, `U` unique candidate products and `R` d
 
 Example: 1,000 people with five watches each still get at most 2,000 sale digests/day, not 10,000. Actual provider email charges still grow with sent messages; a no-model architecture cannot make delivery free at arbitrary volume. The default 100-attempt daily budget would need explicit adjustment and an appropriate provider plan before serving that worst case.
 
-Snapshots and product checks retain two days of non-current data; live snapshots remain. Large email payloads/candidate lists are cleared after two days, and terminal job metadata, notifications and changed-price history retain 90 days. This bounds storage growth rather than preserving every full HTML email forever. The public catalogue currently caps reads at 20,000 available variants; server-side pagination/search is required before exceeding that browse cap.
+Superseded snapshots and product checks retain two days. Current snapshots remain while their source is fresh; source pointers older than two days are cleared so an abandoned shop cannot pin a catalogue forever. Legacy rows are deleted once the source has moved to snapshots. Expired confirmation tokens and rate/confirmation counters older than seven days are removed. Run metadata and source reports are pruned after 90 days when no retained snapshot or digest refers to them. The health endpoint records `lastCleanup`. Large email payloads/candidate lists are cleared after two days, and terminal job metadata, notifications and changed-price history retain 90 days. This bounds storage growth rather than preserving every full HTML email forever. The public catalogue currently caps reads at 20,000 available variants; server-side pagination/search is required before exceeding that browse cap.
 
 ## Next measured upgrades
 

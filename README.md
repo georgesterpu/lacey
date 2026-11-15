@@ -1,8 +1,8 @@
-# Shoehoo
+# Lacey
 
-**Nice shoes. Nicer prices.** A public, account-free running-shoe deal watcher for adults and kids. Working name; the existing deployment URL is retained.
+**Happy feet. Cheeky prices. 😊** A public, account-free running-shoe deal watcher for adults and kids. Working name; the existing deployment URL is retained.
 
-The third pass replaces the green club theme with white, charcoal, cobalt and orange, removes Brave Runners branding, adds kids' fits, and introduces a deterministic checking/digest pipeline.
+A friendly shoe lookout with a pair of smiling soles, readable labels, and a little blush in the emails. Men’s, women’s and kids’ are labelled **Department**, independently of shoe size or width. The app and scheduler use deterministic code, with no model calls.
 
 ## Live behavior
 
@@ -10,11 +10,11 @@ The third pass replaces the green club theme with white, charcoal, cobalt and or
 - Explicit 🇮🇪 / 🇪🇺 seller labels, shop-specific links and exact variant URLs.
 - Watches for a model, brand or category, fit/age group, size and budget. No ChatGPT sign-in. A private random HttpOnly device cookie scopes watch management.
 - Unlabelled shop sizes are never silently converted to UK. “Watch this shoe” can use that shop's explicitly labelled listed-size scheme for the selected model/source.
-- Source snapshots are validated before publication. Fresh product/page validation precedes sale digests; failures suppress alerts instead of trusting old data.
+- Ended discounts, vanished products and unavailable variants leave the public deals after a successful update. Failed sources and known dead links are hidden. Source snapshots are validated before publication. Fresh product/page validation precedes sale digests; failures suppress alerts instead of trusting old data.
 - Verified emails receive one combined HTML/plain-text digest per slot, up to two sale digests/day, with up to six shoes and direct retailer links. Actual delivery still needs a verified sender.
 - `/email-preview` shows the HTML design using clearly labelled preview content. `/api/health` shows non-personal run/source/outbox status.
 
-Read the [implemented reliability and scaling plan](docs/reliable-checks.md) for exact checks, guarantees, limitations, quotas, retry rules and upgrade triggers.
+Read the [personality notes](docs/personality.md), [Vercel handoff](docs/deployment-handoff.md), and [implemented reliability and scaling plan](docs/reliable-checks.md) for exact checks, guarantees, limitations, quotas, retry rules and upgrade triggers.
 
 ## Local development
 
@@ -59,7 +59,7 @@ GitHub scheduling can be delayed, so the app displays actual timestamps rather t
 | `EMAIL_FROM` | Verified sender address/domain |
 | `DAILY_EMAIL_LIMIT` | Hard global delivery-attempt budget; default 100 |
 
-Email credentials are not provisioned or fabricated. With no sender, watches save and the UI accurately reports email delivery unavailable. `ganuary.ie` has not been changed.
+Email credentials are not provisioned or fabricated. With no sender, watches save and the UI accurately reports email delivery unavailable. `january.ie` has not been changed.
 
 ## Source map
 
@@ -73,3 +73,7 @@ Email credentials are not provisioned or fabricated. With no sender, watches sav
 - `tests/` and `fixtures/`: behavior tests and real retailer contract examples
 
 Markdown percentages compare with retailer reference prices and exclude delivery. Coupons and below-market claims are not implemented. Product data/images belong to the linked retailers; review access rules and terms before expanding collection.
+
+## Catalogue housekeeping
+
+Every completed or failed scan runs bounded cleanup; catch-up calls for already-completed slots also run it. The health response exposes `lastCleanup`. Old snapshots and link checks retain two days; histories, terminal notifications and unreferenced run records retain 90 days. Obsolete legacy product rows, expired confirmation tokens and old rate-limit counters are removed. Active watch preferences stay intact. See the reliability plan for the exact rules.

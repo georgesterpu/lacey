@@ -1,6 +1,7 @@
 import type { Env, Offer } from './types';
 import { collect, sources } from './sources';
 import { scheduleSlot } from './schedule';
+import { cleanup } from './retention';
 export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter').bind(s.id,s.name,s.url,s.adapter)));}
 export async function scan(env:Env) {
  await initializeSources(env);const now=new Date().toISOString(),slot=scheduleSlot(),id=crypto.randomUUID();
@@ -10,7 +11,7 @@ export async function scan(env:Env) {
  let run=await env.DB.prepare('SELECT id,status,attempts,heartbeat_at FROM scan_runs WHERE slot_key=?').bind(slot).first<{id:string;status:string;attempts:number;heartbeat_at:string}>();
  if(run!.id!==id){
   const leaseExpired=run!.heartbeat_at<new Date(Date.now()-10*60000).toISOString();
-  if(run!.attempts>=3||!((['failed','partial'].includes(run!.status))||(run!.status==='running'&&leaseExpired)))return {runId:run!.id,status:run!.status,skipped:true};
+  if(run!.attempts>=3||!((['failed','partial'].includes(run!.status))||(run!.status==='running'&&leaseExpired))){if(run!.status!=='running')await cleanup(env);return {runId:run!.id,status:run!.status,skipped:true};}
   const lease=crypto.randomUUID();await env.DB.prepare("UPDATE scan_runs SET status='running',attempts=attempts+1,heartbeat_at=? WHERE id=? AND attempts<3 AND (status IN('failed','partial') OR (status='running' AND heartbeat_at<?))").bind(`${now}|${lease}`,run!.id,new Date(Date.now()-10*60000).toISOString()).run();
   const check=await env.DB.prepare('SELECT heartbeat_at FROM scan_runs WHERE id=?').bind(run!.id).first<{heartbeat_at:string}>();if(check?.heartbeat_at!==`${now}|${lease}`)return {runId:run!.id,status:'running',skipped:true};
  }
@@ -44,14 +45,5 @@ export async function scan(env:Env) {
   return {runId,status,reports};
  }catch(e){await env.DB.prepare("UPDATE scan_runs SET status='failed',completed_at=?,errors_json=? WHERE id=?").bind(new Date().toISOString(),JSON.stringify([(e as Error).message]),runId).run();throw e;}
 }
-async function cleanup(env:Env){const twoDays=new Date(Date.now()-2*86400000).toISOString(),ninetyDays=new Date(Date.now()-90*86400000).toISOString();await env.DB.batch([
- env.DB.prepare("UPDATE digest_jobs SET status='suppressed',error='Scan expired',payload=NULL,candidates='[]' WHERE status IN('queued','sending') AND created_at<?").bind(new Date(Date.now()-6*3600000).toISOString()),
- env.DB.prepare("UPDATE digest_jobs SET payload=NULL,candidates='[]' WHERE status IN('sent','suppressed','failed') AND created_at<?").bind(twoDays),
- env.DB.prepare('DELETE FROM notifications WHERE created_at<?').bind(ninetyDays),
- env.DB.prepare('DELETE FROM offer_snapshots WHERE checked_at<? AND snapshot_id NOT IN(SELECT live_snapshot_id FROM sources WHERE live_snapshot_id IS NOT NULL)').bind(twoDays),
- env.DB.prepare('DELETE FROM product_checks WHERE checked_at<?').bind(twoDays),
- env.DB.prepare('DELETE FROM price_history WHERE observed_at<?').bind(ninetyDays),
- env.DB.prepare("DELETE FROM digest_jobs WHERE created_at<? AND status IN('sent','suppressed','failed')").bind(ninetyDays)
-]);}
-// Compatibility for tests and callers; batching is implemented in the outbox module.
+// Compatibility for callers; recipient delivery is implemented in the outbox.
 export { dispatchDigests as sendAlerts } from './outbox';

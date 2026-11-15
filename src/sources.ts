@@ -40,7 +40,7 @@ export function normalize(p:Product,source:typeof sources[number],now:string):Of
 export async function collect(source:typeof sources[number],now:string) {
  const result=new Map<string,Offer>();let complete=true,rejected=0,seen=0,held=0;
  for(const collection of source.collections){for(let page=1;page<=2;page++){
-  const response=await fetch(`${source.url}/collections/${collection}/products.json?limit=250&page=${page}`,{headers:{'User-Agent':'Shoehoo/0.3 (+size-aware running-shoe price checks)'},signal:AbortSignal.timeout(20000)});
+  const response=await fetch(`${source.url}/collections/${collection}/products.json?limit=250&page=${page}`,{headers:{'User-Agent':'Lacey/0.4 (+size-aware running-shoe price checks)'},signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw new Error(`Store returned HTTP ${response.status}`);
   const data=await response.json() as {products:unknown[]};if(!Array.isArray(data.products))throw new Error('Contract changed: products array missing');
   for(const product of data.products){seen++;if(!isProduct(product)){rejected++;continue;}const offers=normalize(product,source,now);if(!offers.length)held++;const invalid=product.variants.filter(v=>!v||typeof v.available!=='boolean'||cents(v.price)===null).length;if(invalid)rejected++;for(const offer of offers)result.set(offer.id,offer);}

@@ -1,4 +1,4 @@
-name: Shoehoo checks and digests
+name: Lacey checks and digests
 on:
   schedule:
     - cron: '0 8,20 * * *'

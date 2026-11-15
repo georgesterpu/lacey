@@ -8,6 +8,7 @@ import { planDigests, dispatchDigests } from './outbox';
 import { digestEmail } from './email-template';
 import { nextCheck } from './schedule';
 import { sources as approvedSources } from './sources';
+import { currentDeals } from './catalogue';
 import html from '../public/index.html' with {type:'text'};
 import css from '../public/style.css' with {type:'text'};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
@@ -43,7 +44,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   return json({error:'Not found'},404);
  }
  if(path==='/email-preview'){
-  const offers=(await env.DB.prepare('SELECT * FROM current_offers WHERE available=1 AND reference_price>price ORDER BY price LIMIT 3').all<Offer>()).results;
+  const seen=new Set<string>();const offers=(await currentDeals(env,2000)).sort((a,b)=>a.price-b.price).filter(o=>{const key=`${o.source_id}:${o.product_id}`;if(seen.has(key))return false;seen.add(key);return true;}).slice(0,3);
   return new Response(digestEmail(offers,env.APP_URL??url.origin,'/#my-watches',true).html,{headers:{'Content-Type':'text/html','Cache-Control':'no-store'}});
  }
  if(path==='/confirm-email'){
@@ -51,19 +52,19 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   const row=await env.DB.prepare('SELECT c.watch_id,w.owner_id,w.email FROM email_confirmations c JOIN watches w ON w.id=c.watch_id WHERE c.token_hash=? AND c.expires_at>?').bind(await digest(token),new Date().toISOString()).first<{watch_id:string;owner_id:string;email:string}>();
   if(!row)return page('This link has expired.','Open your watchlist to request a new confirmation.');
   // GET is a confirmation screen; email security scanners cannot opt people in.
-  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id),env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())]);return page('Your email is confirmed.','We’ll email you when your shoe watch finds a match.');}
+  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE watches SET email_verified=1 WHERE owner_id=? AND email=?').bind(row.owner_id,row.email),env.DB.prepare('DELETE FROM email_confirmations WHERE watch_id=?').bind(row.watch_id),env.DB.prepare('INSERT INTO subscribers(email_hash,email,unsubscribe_token) VALUES(?,?,?) ON CONFLICT(email_hash) DO UPDATE SET unsubscribed=0').bind(await digest(row.email),row.email,crypto.randomUUID())]);return page('You’re on the list 😊','We’ll email you when your shoe watch finds a match. Happy miles!');}
   return page('Confirm your shoe alert.','One click, and we’ll keep an eye out for you.','Confirm my email');
  }
  if(path==='/unsubscribe-all'){
   const token=url.searchParams.get('token');if(!token||token.length>100)return page('This link is invalid.','Use the unsubscribe link in your email.');
   const person=await env.DB.prepare('SELECT email,email_hash FROM subscribers WHERE unsubscribe_token=?').bind(token).first<{email:string;email_hash:string}>();
   if(!person)return page('You’re all set.','This email subscription is no longer active.');
-  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE subscribers SET unsubscribed=1 WHERE email_hash=?').bind(person.email_hash),env.DB.prepare('UPDATE watches SET active=0 WHERE email=?').bind(person.email),env.DB.prepare("UPDATE digest_jobs SET status='suppressed',error='Unsubscribed' WHERE email_hash=? AND status='queued'").bind(person.email_hash)]);return page('Sale emails stopped.','Your watches are paused. You can change them in your browser.');}
+  if(method==='POST'){await env.DB.batch([env.DB.prepare('UPDATE subscribers SET unsubscribed=1 WHERE email_hash=?').bind(person.email_hash),env.DB.prepare('UPDATE watches SET active=0 WHERE email=?').bind(person.email),env.DB.prepare("UPDATE digest_jobs SET status='suppressed',error='Unsubscribed' WHERE email_hash=? AND status='queued'").bind(person.email_hash)]);return page('All paused. No hard feelings 😊','Sale emails have stopped. Your watches are still here if you need them.');}
   return page('Stop sale emails?','This pauses sale alerts for your email address.','Stop sale emails');
  }
  if(path==='/unsubscribe'){
   const token=url.searchParams.get('token');if(!token||token.length>100)return new Response('Invalid link',{status:400});
-  if(method==='POST'){await env.DB.prepare('DELETE FROM watches WHERE unsubscribe_token=?').bind(token).run();return page('Your watch has been removed.','You can start another whenever you like.');}
+  if(method==='POST'){await env.DB.prepare('DELETE FROM watches WHERE unsubscribe_token=?').bind(token).run();return page('Watch removed 😊','You can start another whenever a new shoe catches your eye.');}
   return page('Stop this shoe alert?','You won’t receive any more emails for this watch.','Stop this watch');
  }
  if(path.startsWith('/api/')){
@@ -71,7 +72,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   if(path==='/api/dashboard'&&method==='GET'){
    const existing=await env.DB.prepare('SELECT count(*) n FROM sources').first<{n:number}>();if(!existing?.n)await initializeSources(env);
    const [rows,sourceRows,last,watches]=await Promise.all([
-    env.DB.prepare('SELECT * FROM current_offers WHERE available=1 AND checked_at>=? ORDER BY checked_at DESC LIMIT 20000').bind(freshCutoff()).all<Offer>(),
+    currentDeals(env).then(results=>({results})),
     env.DB.prepare('SELECT * FROM sources ORDER BY CASE adapter WHEN \'planned\' THEN 1 ELSE 0 END,name').all(),
     env.DB.prepare("SELECT value FROM app_state WHERE key='last_scan'").first<{value:string}>(),
     env.DB.prepare('SELECT id,kind,query,category,fit,size_system,size,colour,budget,min_discount,active,email_verified,created_at FROM watches WHERE owner_id=? ORDER BY created_at DESC').bind(user).all<Watch>()
@@ -83,7 +84,8 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
    const run=await env.DB.prepare('SELECT id,status,started_at,completed_at,attempts FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<{id:string;status:string;completed_at:string|null}>();
    const checks=run?(await env.DB.prepare('SELECT source_id,status,products,variants,rejected,details,completed_at FROM source_runs WHERE run_id=?').bind(run.id).all()).results:[];
    const delivery=run?(await env.DB.prepare('SELECT status,count(*) count FROM digest_jobs WHERE run_id=? GROUP BY status').bind(run.id).all()).results:[];
-   return json({run,checks,delivery,nextCheck:nextCheck(),emailReady:emailReady(env),stale:run?.status==='failed'||!run?.completed_at||Date.now()-Date.parse(run.completed_at)>14*3600000});
+   const housekeeping=await env.DB.prepare("SELECT value FROM app_state WHERE key='last_cleanup'").first<{value:string}>();
+   return json({run,checks,delivery,lastCleanup:housekeeping?.value??null,nextCheck:nextCheck(),emailReady:emailReady(env),stale:run?.status==='failed'||!run?.completed_at||Date.now()-Date.parse(run.completed_at)>14*3600000});
   }
   if(!request.headers.get('Cookie')?.match(/(?:^|;\s*)brave_device=[a-f0-9]{64}(?:;|$)/))return json({error:'Please allow cookies for this site, then refresh to save your watch.'},401);
   if(method!=='GET'&&method!=='DELETE'&&!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'Please submit using the form'},415);
@@ -119,4 +121,4 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
  return new Response('Not found',{status:404});
 }
-function page(title:string,message:string,button?:string) {return new Response(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Shoehoo</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">shoehoo.</a><h1>${title}</h1><p>${message}</p>${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}
+function page(title:string,message:string,button?:string) {return new Response(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Lacey</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">lacey 😊</a><h1>${title}</h1><p>${message}</p>${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}

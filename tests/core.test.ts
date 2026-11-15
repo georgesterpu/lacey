@@ -62,7 +62,7 @@ test('a confirmation GET cannot opt someone in; POST verifies only that device�
  const original=globalThis.fetch;const messages:Record<string,string>[]=[];
  globalThis.fetch=(async (_url:unknown,init:RequestInit)=>{messages.push(JSON.parse(String(init.body)));return Response.json({id:'test-only'});}) as typeof fetch;
  try{
-  const result=await sendConfirmation(env,{id:first.id,email:watchInput.email});expect(result).toBe('sent');expect(messages).toHaveLength(1);expect(messages[0].subject).toBe('Confirm your Shoehoo alert');
+  const result=await sendConfirmation(env,{id:first.id,email:watchInput.email});expect(result).toBe('sent');expect(messages).toHaveLength(1);expect(messages[0].subject).toBe('One little click for happy feet 😊 — Lacey');
   const token=messages[0].text.match(/confirm-email\?token=([a-f0-9]{64})/)![1];
   await handle(request(`/confirm-email?token=${token}`),env,'');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(0);
   await handle(request(`/confirm-email?token=${token}`,'POST'),env,'');expect((await env.DB.prepare('SELECT count(*) n FROM watches WHERE email_verified=1').first<{n:number}>())!.n).toBe(1);
