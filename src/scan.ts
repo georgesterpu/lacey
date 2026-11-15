@@ -1,6 +1,7 @@
 import type { Env, Offer, Watch } from './types';
 import { discount, freshCutoff, matches, money } from './types';
 import { collect, sources } from './sources';
+import { sendConfirmation } from './email';
 const escape = (s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export async function initializeSources(env:Env) {
  await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter').bind(s.id,s.name,s.url,s.adapter)));
@@ -44,7 +45,9 @@ export async function scan(env:Env) {
 export async function sendAlerts(env:Env) {
  // No simulated sends or outbox growth when a sender has not been configured.
  if(!env.RESEND_API_KEY||!env.EMAIL_FROM||!env.APP_URL)return {sent:0,status:'not_configured'};
- const watches=(await env.DB.prepare('SELECT * FROM watches WHERE active=1').all<Watch & {unsubscribe_token:string}>()).results;
+ const unverified=(await env.DB.prepare('SELECT id,email FROM watches WHERE active=1 AND email_verified=0 LIMIT 100').all<Pick<Watch,'id'|'email'>>()).results;
+ for(const watch of unverified)await sendConfirmation(env,watch);
+ const watches=(await env.DB.prepare('SELECT * FROM watches WHERE active=1 AND email_verified=1').all<Watch & {unsubscribe_token:string}>()).results;
  const offers=(await env.DB.prepare('SELECT * FROM offers WHERE available=1 AND checked_at>=?').bind(freshCutoff()).all<Offer>()).results;
  let sent=0;
  for(const watch of watches){

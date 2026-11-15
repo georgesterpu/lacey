@@ -1,6 +1,6 @@
 export interface Statement { bind(...values: unknown[]): Statement; all<T=Record<string,unknown>>(): Promise<{results:T[]}>; first<T=Record<string,unknown>>(): Promise<T|null>; run(): Promise<unknown>; }
 export interface DB { prepare(sql:string):Statement; batch(statements:Statement[]):Promise<unknown>; }
-export interface Env { DB:DB; RESEND_API_KEY?:string; EMAIL_FROM?:string; APP_URL?:string; SCAN_SECRET?:string; SITE_ACCESS?:string; }
+export interface Env { DB:DB; RESEND_API_KEY?:string; EMAIL_FROM?:string; APP_URL?:string; }
 export interface Offer { id:string; source_id:string; product_id:string; title:string; brand:string; category:string; fit:string; size_system:string; size:string; colour:string; price:number; reference_price:number|null; currency:string; image:string; url:string; available:number; checked_at:string; }
 export interface Watch { id:string; owner_id:string; email:string; kind:string; query:string; category:string; fit:string; size_system:string; size:string; colour:string; budget:number; min_discount:number; active:number; created_at:string; consent_at:string; }
 export const categories = ['any','daily','stability','race','trail'] as const;
