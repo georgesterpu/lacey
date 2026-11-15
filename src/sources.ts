@@ -1,3 +1,4 @@
+import {collectTwentyOne} from './twentyone';
 import {collectLifestyle} from './lifestyle';
 import {collectWarehouse} from './warehouse';
 import type { Offer } from './types';
@@ -6,7 +7,7 @@ export const sources = [
  {id:'runhub',name:'The Run Hub',url:'https://therunhub.ie',adapter:'shopify',collections:['all-footwear'],sizeSystem:'unknown'},
  {id:'elverys',name:'Elverys',url:'https://www.elverys.ie',adapter:'shopify',collections:['15-off-running-footwear','boys-running-footwear','girls-running-footwear'],sizeSystem:'unknown'},
  {id:'misterrunning',name:'MisterRunning',url:'https://www.misterrunning.com/en/',adapter:'planned',collections:[],sizeSystem:'unknown'},
- {id:'21run',name:'21RUN',url:'https://21run.com/eu/',adapter:'planned',collections:[],sizeSystem:'unknown'},
+ {id:'21run',name:'21RUN',url:'https://21run.com/eu/',adapter:'twentyone',collections:[],sizeSystem:'unknown'},
  {id:'warehouse',name:'Running Warehouse Europe',url:'https://www.runningwarehouse.eu',adapter:'planned',collections:[],sizeSystem:'unknown'},
  {id:'lifestyle',name:'Life Style Sports',url:'https://www.lifestylesports.com',adapter:'lifestyle',collections:[],sizeSystem:'unknown'},
  {id:'sportsdirect',name:'Sports Direct',url:'https://www.sportsdirect.ie',adapter:'planned',collections:[],sizeSystem:'unknown'},
@@ -40,6 +41,7 @@ export function normalize(p:Product,source:typeof sources[number],now:string):Of
  });
 }
 export async function collect(source:typeof sources[number],now:string) {
+ if(source.adapter==='twentyone')return collectTwentyOne(now);
  if(source.adapter==='lifestyle')return collectLifestyle(now);
  if(source.adapter==='warehouse')return collectWarehouse(now);
  const result=new Map<string,Offer>();let complete=true,rejected=0,seen=0,held=0;

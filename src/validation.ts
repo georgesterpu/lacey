@@ -1,3 +1,4 @@
+import {twentyOneProduct} from './twentyone';
 import {lifestyleProduct} from './lifestyle';
 import {warehouseProduct} from './warehouse';
 import type { Env, Offer } from './types';
@@ -8,7 +9,8 @@ export async function validateProduct(env:Env,runId:string,offer:Offer):Promise<
  if(cached)return cached.status==='ok'?JSON.parse(cached.payload??'[]'):[];
  const source=sources.find(s=>s.id===offer.source_id);let checked:Offer[]=[],error:string|null=null;
  try {
-  if(source?.adapter==='lifestyle'){checked=await lifestyleProduct(offer.url,new Date().toISOString());}
+  if(source?.adapter==='twentyone'){const state=await env.DB.prepare('SELECT status,error FROM sources WHERE id=?').bind(source.id).first<{status:string;error:string|null}>();if(state?.status==='error'&&state.error?.includes('21RUN paused'))throw new Error(state.error);checked=await twentyOneProduct(offer.url,new Date().toISOString());}
+  else if(source?.adapter==='lifestyle'){checked=await lifestyleProduct(offer.url,new Date().toISOString());}
   else if(source?.adapter==='warehouse'){checked=await warehouseProduct(offer.url,new Date().toISOString());}
   else {
   if(!source||source.adapter!=='shopify')throw new Error('Source adapter is not approved');
@@ -25,7 +27,7 @@ export async function validateProduct(env:Env,runId:string,offer:Offer):Promise<
   const p:Product={id:data.id,title:data.title,vendor:data.vendor,tags:data.tags,product_type:data.type??data.product_type,handle:data.handle,options:Array.isArray(data.options)?data.options.map((o:any,i:number)=>typeof o==='string'?{name:o,position:i+1}:o):[],images:(data.images??[]).map((i:any)=>typeof i==='string'?{src:i}:i),variants:data.variants.map((v:any)=>({...v,price:Number.isSafeInteger(v.price)&&v.price>0?(v.price/100).toFixed(2):'',compare_at_price:Number.isSafeInteger(v.compare_at_price)&&v.compare_at_price>0?(v.compare_at_price/100).toFixed(2):null}))};
   checked=normalize(p,source,new Date().toISOString());if(!checked.length)throw new Error('No verified shoe variants');
   }
- }catch(e){error=(e as Error).message;}
+ }catch(e){error=(e as Error).message;if(source?.id==='21run'&&error.includes('21RUN paused'))await env.DB.prepare("UPDATE sources SET status='error',error=?,live_snapshot_id=NULL,last_attempt=? WHERE id='21run'").bind(error,new Date().toISOString()).run();}
  await env.DB.prepare('INSERT INTO product_checks(run_id,source_id,product_id,status,checked_at,details,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id,product_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at,details=excluded.details,payload=excluded.payload').bind(runId,offer.source_id,offer.product_id,error?'blocked':'ok',new Date().toISOString(),error,error?null:JSON.stringify(checked)).run();
  return checked;
 }
