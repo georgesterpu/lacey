@@ -13,6 +13,7 @@ import { shoeCards } from './shoe-identity';
 import { releaseUnsentRecommendations } from './recommendations';
 import html from '../public/index.html' with {type:'text'};
 import css from '../public/style.css' with {type:'text'};
+const signedEmailRoutes=new Set(['/confirm-email','/unsubscribe','/unsubscribe-all','/api/unsubscribe']);
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
 export function groupOffers(offers:Offer[]) {
  const groups=new Map<string,Offer & {sizes:string[];discount:number;sizeUrls:Record<string,string>}>();
@@ -26,14 +27,16 @@ export async function handle(request:Request,env:Env,clientCode:string):Promise<
  // Random device capability, never an email address or a browser-readable identifier.
  if(new URL(request.url).pathname==='/api/dashboard')response.headers.set('Set-Cookie',identity.cookie);
  response.headers.set('X-Content-Type-Options','nosniff');
- response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');
+ response.headers.set('Referrer-Policy',signedEmailRoutes.has(new URL(request.url).pathname)?'strict-origin':'strict-origin-when-cross-origin');
  return response;
 }
 async function route(request:Request,env:Env,clientCode:string,user:string):Promise<Response> {
  const url=new URL(request.url);const path=url.pathname;const method=request.method;
- if(path!=='/api/unsubscribe'&&path!=='/unsubscribe-all'&&method!=='GET'&&request.headers.get('Origin')&&request.headers.get('Origin')!==url.origin)return json({error:'Please submit from this website'},403);
- if(path==='/style.css')return new Response(css,{headers:{'Content-Type':'text/css','Cache-Control':'no-cache'}});
- if(path==='/app.js')return new Response(clientCode,{headers:{'Content-Type':'text/javascript','Cache-Control':'no-cache'}});
+ // Signed email links authorize themselves with an unpredictable token, not a
+ // browser cookie. Privacy settings can send Origin: null on their form POSTs.
+ if(!signedEmailRoutes.has(path)&&method!=='GET'&&request.headers.get('Origin')&&request.headers.get('Origin')!==url.origin)return json({error:'Please submit from this website'},403);
+ if(path==='/style.css')return new Response(css,{headers:{'Content-Type':'text/css; charset=utf-8','Cache-Control':'no-cache'}});
+ if(path==='/app.js')return new Response(clientCode,{headers:{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}});
  if(path.startsWith('/api/internal/')){
   if(!env.CRON_SECRET||request.headers.get('Authorization')!==`Bearer ${env.CRON_SECRET}`)return json({error:'Scheduler authorization required. This endpoint is called by the deterministic scheduler, not a ChatGPT task.'},401);
   if(method!=='POST')return json({error:'Use POST'},405);
@@ -47,9 +50,10 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  }
  if(path==='/email-preview'){
   const offers=shoeCards(await currentDeals(env,2000)).slice(0,3).flatMap(c=>c.options.slice(0,3));
-  return new Response(digestEmail(offers,env.APP_URL??url.origin,'/#my-watches',true).html,{headers:{'Content-Type':'text/html','Cache-Control':'no-store'}});
+  return new Response(digestEmail(offers,env.APP_URL??url.origin,'/#my-watches',true).html,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
  }
  if(path==='/confirm-email'){
+  if(method!=='GET'&&method!=='POST')return new Response('Use GET or POST',{status:405});
   const token=url.searchParams.get('token');if(!token||!/^([a-f0-9]{64})$/.test(token))return new Response('This confirmation link is invalid.',{status:400});
   const row=await env.DB.prepare('SELECT c.watch_id,w.owner_id,w.email FROM email_confirmations c JOIN watches w ON w.id=c.watch_id WHERE c.token_hash=? AND c.expires_at>?').bind(await digest(token),new Date().toISOString()).first<{watch_id:string;owner_id:string;email:string}>();
   if(!row)return page('This link has expired.','Open your watchlist to request a new confirmation.');
@@ -130,7 +134,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   }
   return json({error:'Not found'},404);
  }
- if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
+ if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
  return new Response('Not found',{status:404});
 }
-function page(title:string,message:string,button?:string) {return new Response(`<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Lacey</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">lacey 😊</a><h1>${title}</h1><p>${message}</p>${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}
+function page(title:string,message:string,button?:string) {return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><title>Lacey</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">lacey 😊</a><h1>${title}</h1><p>${message}</p>${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin'}});}
