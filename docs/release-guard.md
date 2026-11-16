@@ -19,8 +19,9 @@ The guard requires:
 - Loading to finish, rather than a successful HTML response with a stuck client.
 
 It never creates watches, sends email or clicks verification/unsubscribe links.
+Public catalogue responses and private watch responses are tested separately.
 Protected staging requests retain Vercel authentication; a loopback-only bridge
-uses authenticated `vercel curl` for four GET paths. No protection settings are
+uses authenticated `vercel curl` for five GET paths. No protection settings are
 weakened and no new permanent bypass credential is required.
 
 GitHub's quality workflow runs the same browser guard with production client
@@ -40,7 +41,7 @@ one second during diagnosis.
 
 A separate source scan timed out after 240 seconds after writing only part of a
 snapshot. One SQL statement was being issued per size inside remote batches.
-Snapshots now insert up to 500 variants through one JSON-backed SQL statement;
+Snapshots now insert up to 50 variants per parameterized SQL statement (950 parameters), in bounded transactions;
 publication remains atomic and incomplete snapshots stay hidden.
 
 The failed catalogue-only workflow unnecessarily started that source scan, then
@@ -51,3 +52,5 @@ These guards block the known failure modes and stop unverified promotions. They
 do not guarantee that hosting, database, retailer or network services can never
 fail after a release. The production check detects later failures; investigate
 rather than weakening the nonempty/latency checks to make a release pass.
+
+Collection, caching and inventory reporting are documented in [production-reliability.md](production-reliability.md).

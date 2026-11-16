@@ -9,7 +9,11 @@ console.info('Lacey runtime',{bun:Bun.version});
 function connection(){return client??=remoteClient({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TURSO_AUTH_TOKEN:process.env.TURSO_AUTH_TOKEN});}
 export async function appFetch(request:Request){
  try{
-  const url=new URL(request.url),db=connection();
+  const url=new URL(request.url);
+  // Background writes never occupy the browser connection's queue.
+  const internal=url.pathname.startsWith('/api/internal/');
+  const db=internal?remoteClient({...process.env,timeoutMs:90000}):connection();
+  try {
   if(url.pathname==='/api/internal/backup'){
    if(!process.env.CRON_SECRET||request.headers.get('Authorization')!==`Bearer ${process.env.CRON_SECRET}`)return new Response('Unauthorized',{status:401});
    if(request.method!=='POST')return new Response('Use POST',{status:405});
@@ -20,5 +24,6 @@ export async function appFetch(request:Request){
   }
   const env=runtimeEnv(databaseAdapter(db),url.origin,process.env);
   return await handle(request,env,clientCode);
+  } finally {if(internal)db.close();}
  }catch(error){console.error('Lacey request failed',{type:error instanceof Error?error.name:'Unknown'});return Response.json({error:'Temporarily unavailable. Please try again shortly.'},{status:503,headers:{'Cache-Control':'no-store'}});}
 }

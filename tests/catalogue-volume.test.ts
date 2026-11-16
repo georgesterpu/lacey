@@ -42,8 +42,8 @@ test("a large unpublished catalogue cannot enter or turn the public read into a 
     expect(plan.rows.some((row) => String(row.detail) === "SCAN o")).toBe(
       false,
     );
-    // 2,000 size rows require four SQL operations, not 2,000 remote statements.
-    expect(offerStatements(fixture.env, "run", rows)).toHaveLength(4);
+    // 2,000 size rows require 40 SQL operations, not 2,000 remote statements.
+    expect(offerStatements(fixture.env, "run", rows)).toHaveLength(40);
     const one = rows[0];
     expect(
       offerStatements(fixture.env, "run", [

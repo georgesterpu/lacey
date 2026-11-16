@@ -111,10 +111,10 @@ export async function advanceCatalogue(env: Env, runId: string) {
     if (result.done) {
       const snapshot = `${runId}:21run:full`;
       const totals = await env.DB.prepare(
-        'SELECT count(*) variants,count(DISTINCT product_id) products FROM offer_snapshots WHERE snapshot_id=?',
+        'SELECT count(*) variants,count(DISTINCT product_id) products,count(DISTINCT CASE WHEN available=1 THEN product_id END) availableProducts FROM offer_snapshots WHERE snapshot_id=?',
       )
         .bind(snapshot)
-        .first<{ variants: number; products: number }>();
+        .first<{ variants: number; products: number; availableProducts:number }>();
       const previous = await env.DB.prepare(
         "SELECT product_count FROM sources WHERE id='21run'",
       ).first<{ product_count: number }>();
@@ -127,6 +127,7 @@ export async function advanceCatalogue(env: Env, runId: string) {
           '21RUN catalogue unexpectedly empty or shrank by over 50%; snapshot withheld',
         );
       await env.DB.batch([
+        env.DB.prepare('INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('source-summary:21run',JSON.stringify({snapshot,checkedAt:now,...totals,soldOutProducts:totals.products-totals.availableProducts})),
         env.DB.prepare(`INSERT INTO price_history(offer_id,price,observed_at)
           SELECT id,price,checked_at FROM offer_snapshots s WHERE snapshot_id=?
           AND COALESCE((SELECT price FROM price_history h WHERE h.offer_id=s.id ORDER BY observed_at DESC LIMIT 1),-1)!=s.price

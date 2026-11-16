@@ -137,3 +137,16 @@ test('a previous catalogue cannot supply stale offers or offers from a failed sh
  await env.DB.prepare('UPDATE offer_snapshots SET checked_at=?').bind(new Date(Date.now()-31*3600000).toISOString()).run();
  expect((await planDigests(env,current.id)).planned).toBe(0);
 });
+
+test('a sold-out refresh publishes an empty sale snapshot and truthful inventory totals',async()=>{
+ const {env}=await database();await runWithOffers(env,[product(700)]);
+ const sold=product(700);sold.variants[0].available=false;
+ const fullPrice=product(701);fullPrice.variants[0].price='100.00';fullPrice.variants[0].compare_at_price='100.00';
+ globalThis.fetch=(async(input:unknown)=>String(input).includes('amphibianking')?Response.json({products:[sold,fullPrice]}):new Response('',{status:503})) as typeof fetch;
+ await scan(env);
+ expect(await currentDeals(env)).toHaveLength(0);
+ const summary=JSON.parse((await env.DB.prepare("SELECT value FROM app_state WHERE key='source-summary:amphibian'").first<{value:string}>())!.value);
+ expect(summary.products).toBe(2);expect(summary.soldOutProducts).toBe(1);expect(summary.availableProducts).toBe(1);
+ const source=await env.DB.prepare("SELECT live_snapshot_id FROM sources WHERE id='amphibian'").first<{live_snapshot_id:string}>();
+ expect((await env.DB.prepare('SELECT count(*) n FROM offer_snapshots WHERE snapshot_id=?').bind(source!.live_snapshot_id).first<{n:number}>())!.n).toBe(0);
+});

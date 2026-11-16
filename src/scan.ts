@@ -1,7 +1,7 @@
 import type { Env, Offer } from './types';
 import { collect, sources } from './sources';
 import { scheduleSlot } from './schedule';
-import {offerStatements} from './snapshots';
+import {offerStatements,inventorySummary} from './snapshots';
 import { cleanup } from './retention';
 const connectionNotes:Record<string,string>={warehouse:'Paused: customer product links and verification returned HTTP 406. Not publishing offers until browser access is reliable.',misterrunning:'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.', sportsdirect:'Connection test timed out; automatic price/size checks are not connected.'};
 export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter,error) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter,error=CASE WHEN excluded.adapter=\'planned\' THEN excluded.error ELSE sources.error END').bind(s.id,s.name,s.url,s.adapter,connectionNotes[s.id]??null)));}
@@ -25,19 +25,27 @@ export async function scan(env:Env) {
    await env.DB.prepare('UPDATE sources SET last_attempt=? WHERE id=?').bind(now,source.id).run();
    try{
     const {offers,complete,rejected,held}=await collect(source,now);if(!offers.length)throw new Error('No usable variants; previous snapshot kept');
+    console.info('Source collected',{source:source.id,...inventorySummary(offers)});
     const count=new Set(offers.map(o=>o.product_id)).size,prior=await env.DB.prepare('SELECT product_count FROM sources WHERE id=?').bind(source.id).first<{product_count:number}>();
     if(complete&&(prior?.product_count??0)>=50&&count<prior!.product_count*.5)throw new Error('Catalogue shrank by over 50%; snapshot quarantined for review');
     const snapshot=`${runId}:${source.id}`;
+    const partial=!complete||rejected>0;
+    const details=[!complete?(source.adapter==='lifestyle'?'Coverage limited to 5 sale products per department and 10 listed sizes':'Incomplete catalogue coverage'):'',rejected?`${rejected} invalid product records withheld`:'',held?`${held} unsupported products excluded`:''].filter(Boolean).join('; ')||null;
     await env.DB.prepare('DELETE FROM offer_snapshots WHERE snapshot_id=?').bind(snapshot).run();
-    for(let start=0;start<offers.length;start+=500){await env.DB.batch(offerStatements(env,runId,offers.slice(start,start+500)));await env.DB.prepare('UPDATE scan_runs SET heartbeat_at=? WHERE id=?').bind(new Date().toISOString(),runId).run();}
+    // Persist the actionable sale catalogue, not thousands of unavailable or
+    // full-price sizes. Inventory totals above still describe the entire feed.
+    const saleOffers=offers.filter(o=>o.available===1&&o.reference_price!==null&&o.price*100<=o.reference_price*80);
+    for(let start=0;start<saleOffers.length;start+=500){await env.DB.batch(offerStatements(env,runId,saleOffers.slice(start,start+500)));await env.DB.prepare('UPDATE scan_runs SET heartbeat_at=? WHERE id=?').bind(new Date().toISOString(),runId).run();}
     // Publish the entire source in one atomic transaction. Failed/incomplete writes
     // never change the live pointer, so readers keep the previous good snapshot.
     await env.DB.batch([
-     env.DB.prepare('INSERT INTO source_runs(run_id,source_id,status,products,variants,rejected,details,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status=excluded.status,products=excluded.products,variants=excluded.variants,rejected=excluded.rejected,details=excluded.details,completed_at=excluded.completed_at').bind(runId,source.id,complete?'complete':'partial',count,offers.length,rejected,[!complete?(source.adapter==='lifestyle'?'First 5 sale products per department; up to 10 listed sizes':source.adapter==='warehouse'?'First 24 product pages per department':'First 500 products per collection'):'',held?`${held} excluded or unsupported products`:''].filter(Boolean).join('; ')||null,new Date().toISOString()),
-     env.DB.prepare('UPDATE sources SET live_snapshot_id=?,status=?,last_success=?,product_count=?,error=? WHERE id=?').bind(snapshot,complete?'live':'partial',now,count,complete?null:(source.adapter==='lifestyle'?'Coverage limited to 5 sale products per department and 10 listed sizes':source.adapter==='warehouse'?'Coverage limited to 24 verified product pages per department':'Coverage limited to 500 products per collection'),source.id)
+     env.DB.prepare("INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(`source-summary:${source.id}`,JSON.stringify({snapshot,checkedAt:now,...inventorySummary(offers)})),
+     env.DB.prepare('INSERT INTO source_runs(run_id,source_id,status,products,variants,rejected,details,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status=excluded.status,products=excluded.products,variants=excluded.variants,rejected=excluded.rejected,details=excluded.details,completed_at=excluded.completed_at').bind(runId,source.id,partial?'partial':'complete',count,offers.length,rejected,details,new Date().toISOString()),
+     env.DB.prepare('UPDATE sources SET live_snapshot_id=?,status=?,last_success=?,product_count=?,error=? WHERE id=?').bind(snapshot,partial?'partial':'live',now,count,partial?details:null,source.id)
     ]);
+    console.info('Source published',{source:source.id,products:count,variants:offers.length});
     await env.DB.prepare('INSERT INTO price_history(offer_id,price,observed_at) SELECT id,price,checked_at FROM offer_snapshots s WHERE snapshot_id=? AND COALESCE((SELECT price FROM price_history h WHERE h.offer_id=s.id ORDER BY observed_at DESC LIMIT 1),-1)!=s.price ON CONFLICT(offer_id,observed_at) DO NOTHING').bind(snapshot).run();
-    reports.push({source:source.name,status:complete?'complete':'partial',products:count,variants:offers.length,rejected,held});
+    reports.push({source:source.name,status:partial?'partial':'complete',products:count,variants:offers.length,rejected,held});
    }catch(e){const message=(e as Error).message.slice(0,350);await env.DB.batch([env.DB.prepare("UPDATE sources SET status='error',error=? WHERE id=?").bind(message,source.id),env.DB.prepare("INSERT INTO source_runs(run_id,source_id,status,details,completed_at) VALUES(?,?,'failed',?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status='failed',details=excluded.details,completed_at=excluded.completed_at").bind(runId,source.id,message,new Date().toISOString())]);reports.push({source:source.name,status:'failed',error:message});}
   }
   const counts=await env.DB.prepare("SELECT sum(CASE WHEN status IN('complete','partial') THEN 1 ELSE 0 END) good,sum(CASE WHEN status='failed' THEN 1 ELSE 0 END) bad FROM source_runs WHERE run_id=?").bind(runId).first<{good:number;bad:number}>();

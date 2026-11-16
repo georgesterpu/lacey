@@ -43,12 +43,19 @@ export async function collect(source:typeof sources[number],now:string) {
  if(source.adapter==='lifestyle')return collectLifestyle(now);
  if(source.adapter==='warehouse')return collectWarehouse(now);
  const result=new Map<string,Offer>();let complete=true,rejected=0,seen=0,held=0;
- for(const collection of source.collections){for(let page=1;page<=2;page++){
+ const deadline=Date.now()+45000;
+ for(const collection of source.collections){
+  const seenIds=new Set<number>();
+  for(let page=1;page<=40;page++){
+  if(Date.now()>deadline)throw new Error('Collection exceeded its time budget; previous snapshot kept');
   const response=await fetch(`${source.url}/collections/${collection}/products.json?limit=250&page=${page}`,{headers:{'User-Agent':'Lacey/0.4 (+size-aware running-shoe price checks)'},signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw new Error(`Store returned HTTP ${response.status}`);
   const data=await response.json() as {products:unknown[]};if(!Array.isArray(data.products))throw new Error('Contract changed: products array missing');
-  for(const product of data.products){seen++;if(!isProduct(product)){rejected++;continue;}const offers=normalize(product,source,now);if(!offers.length)held++;const invalid=product.variants.filter(v=>!v||typeof v.available!=='boolean'||cents(v.price)===null).length;if(invalid)rejected++;for(const offer of offers)result.set(offer.id,offer);}
-  if(data.products.length<250)break;if(page===2)complete=false;
+  for(const product of data.products){seen++;if(!isProduct(product)){rejected++;continue;}
+   if(seenIds.has(product.id))throw new Error('Store repeated a product across pages; snapshot withheld');
+   seenIds.add(product.id);const offers=normalize(product,source,now);if(!offers.length)held++;const invalid=product.variants.filter(v=>!v||typeof v.available!=='boolean'||cents(v.price)===null).length;if(invalid)rejected++;for(const offer of offers)result.set(offer.id,offer);}
+  if(data.products.length<250)break;
+  if(page===40)throw new Error('Collection exceeded 10,000 products; checkpointed collection is required');
  }}
  if(seen>0&&rejected/seen>.05)throw new Error(`Contract validation failed for ${rejected}/${seen} products; snapshot quarantined`);
  return {offers:[...result.values()],complete,rejected,seen,held};

@@ -100,3 +100,18 @@ test('watch previews are private and explicitly distinguish a saved watch with z
  expect((await handle(request(`/api/watches/${id}/matches`,'GET','bob'),env,'')).status).toBe(404);
  const preview=await handle(request(`/api/watches/${id}/matches`,'GET','alice'),env,'');expect(preview.status).toBe(200);expect((await preview.json()).cards).toEqual([]);
 });
+
+test('public catalogue has shared caching without device or watch data; personal state stays private',async()=>{
+ const env=await database();await handle(request('/api/watches','POST','owner',watchInput),env,'');
+ const personal=await handle(request('/api/watchlist','GET','owner'),env,'');
+ expect((await personal.json()).watches).toHaveLength(1);
+ expect(personal.headers.get('Set-Cookie')).toContain('HttpOnly');
+ expect(personal.headers.get('Cache-Control')).toBe('no-store');
+ expect(personal.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
+ const response=await handle(request('/api/catalogue','GET','owner'),env,'');
+ const catalogue=await response.json();
+ expect(catalogue.watches).toBeUndefined();expect(catalogue.verifications).toBeUndefined();
+ expect(JSON.stringify(catalogue)).not.toContain(watchInput.email);
+ expect(response.headers.has('Set-Cookie')).toBe(false);
+ expect(response.headers.get('Vercel-CDN-Cache-Control')).toContain('s-maxage=60');
+});

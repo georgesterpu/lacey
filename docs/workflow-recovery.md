@@ -32,7 +32,7 @@ immediately returned the stored failure instead of resuming.
 After investigating and fixing a failure, open **Lacey checks and digests →
 Run workflow**. Select `catalogue_only` and optionally enter `resume_run_id`.
 This resumes collection without starting a new scan or sending email. Leaving
-the scan ID blank refreshes the current scheduled slot normally.
+the scan ID blank reuses the latest durable scan namespace without starting a source scan.
 
 Only the old identity-mismatch failure and bounded transient failures resume
 automatically. Other permanent failures still require investigation. Check

@@ -3,7 +3,7 @@ import { strict as assert } from "node:assert";
 // Read-only: no watch, verification, unsubscribe or feedback request is made.
 export async function verifySite(base: string, renderBudgetMs = 8000) {
   const start = performance.now();
-  const response = await fetch(new URL("/api/dashboard", base), {
+  const response = await fetch(new URL("/api/catalogue", base), {
     signal: AbortSignal.timeout(5000),
   });
   assert.equal(
@@ -27,11 +27,11 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
     Array.isArray(data.offers) && data.offers.length > 0,
     "Deals API returned no shoe offers",
   );
-  assert.equal(
-    data.watches.length,
-    0,
-    "Anonymous smoke check must not see saved watches",
-  );
+  assert.equal(data.watches,undefined,'Public catalogue must never contain watch data');
+  const privateResponse=await fetch(new URL('/api/watchlist',base),{signal:AbortSignal.timeout(5000)});
+  assert.equal(privateResponse.status,200,'Private watchlist API failed');
+  const privateData=await privateResponse.json();
+  assert.equal(privateData.watches.length,0,'Anonymous smoke check must not see saved watches');
   for (const offer of data.offers) {
     assert.ok(
       offer.title &&
@@ -131,7 +131,8 @@ export async function protectedSite(deployment: string) {
     ["/", "text/html; charset=utf-8"],
     ["/app.js", "text/javascript; charset=utf-8"],
     ["/style.css", "text/css; charset=utf-8"],
-    ["/api/dashboard", "application/json"],
+    ["/api/catalogue", "application/json"],
+    ["/api/watchlist", "application/json"],
   ]);
   const bodies = new Map<string, string>();
   // Measure the origin request itself, excluding CLI sign-in/startup overhead.
@@ -170,7 +171,7 @@ export async function protectedSite(deployment: string) {
           .trim()
           .split(" ");
       assert.equal(status, "200", `Staged GET ${path} did not return HTTP 200`);
-      if (path === "/api/dashboard") {
+      if (path === "/api/catalogue") {
         assert.ok(
           Number(seconds) <= 5,
           `Staged deals API took ${seconds}s; budget is 5s`,

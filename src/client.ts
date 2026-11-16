@@ -1,8 +1,9 @@
 import {shopFlag} from './shops';
 import type { Offer, Watch } from './types';
-import { shoeIdentity } from './shoe-identity';
+import {matches,freshCutoff} from './types';
+import { shoeIdentity,shoeCards } from './shoe-identity';
 type Group=Offer & {sizes:string[];discount:number;sizeUrls:Record<string,string>;comparisons?:Group[]};
-interface Source {id:string;name:string;url:string;adapter:string;status:string;last_success:string|null;product_count:number;error:string|null;region:'IE'|'EU';flag:string;label:string;}
+interface Source {id:string;name:string;url:string;adapter:string;status:string;last_success:string|null;last_attempt:string|null;product_count:number;current_deals:number;inventory:{products:number;variants:number;availableProducts:number;soldOutProducts:number}|null;error:string|null;region:'IE'|'EU';flag:string;label:string;}
 interface Dashboard {verifications?:{watch_id:string;status:string}[];offers:Group[];sources:Source[];lastScan:string|null;watches:(Watch & {matchCount:number;email_verified:number})[];emailReady:boolean;pipeline?:{status:string;completed_at:string};nextCheck?:string;}
 const $=<T extends HTMLElement=HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 const $$=(s:string)=>[...document.querySelectorAll<HTMLElement>(s)];
@@ -16,7 +17,7 @@ let lastEmail='';
 let toastTimer:ReturnType<typeof setTimeout>;
 function ago(time:string|null){if(!time)return 'Not checked yet';const elapsed=Math.max(0,Date.now()-Date.parse(time));if(elapsed<60000)return 'just now';if(elapsed<3600000)return `${Math.floor(elapsed/60000)} minutes ago`;if(elapsed<86400000)return `${Math.floor(elapsed/3600000)} ${Math.floor(elapsed/3600000)===1?'hour':'hours'} ago`;return `${Math.floor(elapsed/86400000)} ${Math.floor(elapsed/86400000)===1?'day':'days'} ago`;}
 function toast(message:string){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,7000);}
-async function api(path:string,options:RequestInit={}){const response=await fetch(path,{...options,signal:options.signal??AbortSignal.timeout(path==='/api/dashboard'?10000:25000),headers:{'Content-Type':'application/json',...options.headers}});const result=await response.json();if(!response.ok)throw new Error(result.error??'Couldn’t connect. Please try again.');return result;}
+async function api(path:string,options:RequestInit={}){const response=await fetch(path,{...options,signal:options.signal??AbortSignal.timeout(['/api/dashboard','/api/catalogue','/api/watchlist'].includes(path)?10000:25000),headers:{'Content-Type':'application/json',...options.headers}});const result=await response.json();if(!response.ok)throw new Error(result.error??'Couldn’t connect. Please try again.');return result;}
 function tab(name:string){for(const n of ['finds','watches'])$(`#panel-${n}`).hidden=n!==name;$$('.nav-item').forEach(b=>{b.classList.toggle('active',b.dataset.tab===name);if(b.dataset.tab===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});$(`#panel-${name}`).scrollIntoView({behavior:'smooth',block:'start'});}
 function value(id:string){return $<HTMLSelectElement>(`#${id}`).value;}
 function filtered(){
@@ -59,12 +60,15 @@ function renderSources(){
   const stale=s.last_success&&Date.now()-Date.parse(s.last_success)>30*3600000;
   const status=s.error?.startsWith('Updating catalogue:')?'scanning':s.adapter==='planned'?'planned':stale?'stale':s.status;
   const labels:Record<string,string>={scanning:'Updating catalogue',live:'Checked',planned:'Not connected',error:'Check failed',partial:'Limited coverage',stale:'Check overdue'};
-  return `<article class="source-card">${shopIdentity(s)}<div class="source-bottom"><span class="source-status ${status==='live'?'':status==='planned'?'planned':'partial'}">${labels[status]??'Not checked yet'}</span><span>${s.last_success?`${s.product_count} shoes · ${esc(ago(s.last_success))}`:'Not connected'}</span></div>${s.error?`<details><summary>Check details</summary><p>${esc(s.error)}</p></details>`:''}<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">Visit ${esc(s.name)} ↗</a></article>`;
+  const facts=[s.last_success?`Last successful check: ${new Date(s.last_success).toLocaleString('en-IE')}. ${s.product_count} shoe listings collected.`:'No successful catalogue check yet.',s.last_attempt?`Last attempt: ${new Date(s.last_attempt).toLocaleString('en-IE')}.`:'',s.inventory?`${s.inventory.availableProducts} listings in stock; ${s.inventory.soldOutProducts} sold out. ${s.inventory.variants} size variants checked. Sold-out sizes are excluded from deals.`:'',s.error??''].filter(Boolean);
+  return `<article class="source-card">${shopIdentity(s)}<div class="source-bottom"><span class="source-status ${status==='live'?'':status==='planned'?'planned':'partial'}">${labels[status]??'Not checked yet'}</span><span>${s.current_deals} ${s.current_deals===1?'deal':'deals'}</span></div>${s.last_success?`<p>Last checked ${esc(ago(s.last_success))}</p>`:''}<details><summary>Check details</summary>${facts.map(f=>`<p>${esc(f)}</p>`).join('')}</details><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">Visit ${esc(s.name)} ↗</a></article>`;
  }).join('');
 }
 const repairAttempted=new Set<string>();
 async function load(){
- data=await api('/api/dashboard');
+ const personal=api('/api/watchlist').then(value=>({value}),error=>({error}));
+ data={...await api('/api/catalogue'),watches:data?.watches??[]};
+ data!.offers=data!.offers.filter(o=>o.checked_at>=freshCutoff());
  $('#scan-status').textContent=data!.lastScan?`Checked ${ago(data!.lastScan)}`:'First check pending';
  const brands=[...new Set(data!.offers.map(o=>o.brand))].sort(),prev=value('filter-brand');
  $('#filter-brand').innerHTML='<option value="any">Any brand</option>'+brands.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');if(brands.includes(prev))$<HTMLSelectElement>('#filter-brand').value=prev;
@@ -72,7 +76,15 @@ async function load(){
  const watchBrands=[...new Set([...brands,'ASICS','HOKA','BROOKS','SAUCONY','NIKE','ADIDAS','NEW BALANCE','ON','PUMA','MIZUNO'])].sort();$('#watch-brand').innerHTML=watchBrands.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
  $('#model-suggestions').innerHTML=[...new Set(data!.offers.map(shoeTitle))].slice(0,150).map(t=>`<option value="${esc(t)}"></option>`).join('');
  $('#pipeline-status').textContent=`Checks at 08:00 and 20:00, Dublin time. ${data!.pipeline?`Latest run: ${data!.pipeline.status}.`:''} Prices and links are checked again before sale emails.`;
- renderProducts();renderWatches();renderSources();
+ renderProducts();renderSources();
+ // Personal watch data is private and never part of the CDN catalogue. A slow
+ // private request cannot hold the public shoes and filters in loading state.
+ const result=await personal;
+ if('error' in result){$('#watches').innerHTML='<p>Your watches couldn’t load.</p><button class="button button-outline" data-action="retry-load">Try again</button>';return;}
+ data!.verifications=result.value.verifications;
+ const variants=data!.offers.flatMap(o=>o.sizes.map(size=>({...o,size})));
+ data!.watches=result.value.watches.map((w:Watch)=>({...w,matchCount:shoeCards(variants.filter(o=>matches(w,o))).length}));
+ renderWatches();
  // Browsing must never wait for the mail provider. Try each legacy repair once
  // per page, then refresh its state without holding the first render hostage.
  const unsent=(data!.verifications??[]).filter(v=>v.status==='not_sent'&&!repairAttempted.has(v.watch_id));

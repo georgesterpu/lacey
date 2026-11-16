@@ -91,7 +91,7 @@ export async function smokeFixture(clientCode?: string) {
     idleTimeout: 30,
     async fetch(request) {
       const path = new URL(request.url).pathname;
-      if (path === "/api/dashboard" && mode === "stalled")
+      if (path === "/api/catalogue" && mode === "stalled")
         return new Promise<Response>(() => {});
       if (path === "/app.js" && mode === "broken-js")
         return new Response('throw new Error("Broken client fixture");', {
@@ -100,13 +100,13 @@ export async function smokeFixture(clientCode?: string) {
       if (mode === "stalled-mail" && path === "/api/watches/fixture/confirm")
         return new Promise<Response>(() => {});
       const response = await handle(request, env, code);
-      if (path === "/api/dashboard" && mode === "stalled-mail") {
+      if ((path === "/api/catalogue" || path==='/api/watchlist') && mode === "stalled-mail") {
         const data = await response.json();
         data.emailReady = true;
         data.verifications = [{ watch_id: "fixture", status: "not_sent" }];
         return Response.json(data);
       }
-      if (path === "/api/dashboard" && mode === "empty") {
+      if (path === "/api/catalogue" && mode === "empty") {
         const data = await response.json();
         data.offers = [];
         return Response.json(data);

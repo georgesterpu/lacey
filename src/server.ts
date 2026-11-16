@@ -27,7 +27,7 @@ export async function handle(request:Request,env:Env,clientCode:string):Promise<
  const identity=await device(request);
  const response=await route(request,env,clientCode,identity.owner);
  // Random device capability, never an email address or a browser-readable identifier.
- if(['/api/dashboard','/confirm-email'].includes(new URL(request.url).pathname))response.headers.set('Set-Cookie',identity.cookie);
+ if(['/api/dashboard','/api/watchlist','/confirm-email'].includes(new URL(request.url).pathname))response.headers.set('Set-Cookie',identity.cookie);
  response.headers.set('X-Content-Type-Options','nosniff');
  response.headers.set('Referrer-Policy',signedEmailRoutes.has(new URL(request.url).pathname)?'strict-origin':'strict-origin-when-cross-origin');
  return response;
@@ -102,11 +102,17 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  }
  if(path.startsWith('/api/')){
   if(method!=='GET' && request.headers.get('Origin') && request.headers.get('Origin')!==url.origin)return json({error:'Origin mismatch'},403);
-  if(path==='/api/dashboard'&&method==='GET'){
-   const sourceQuery=()=>env.DB.prepare("SELECT * FROM sources ORDER BY CASE adapter WHEN 'planned' THEN 1 ELSE 0 END,name").all<CatalogueSource & Record<string,unknown>>();
+  if(path==='/api/watchlist'&&method==='GET')return json(await dashboardState(env,user));
+  if((path==='/api/dashboard'||path==='/api/catalogue')&&method==='GET'){
+   const sourceQuery=()=>env.DB.prepare("SELECT s.*,a.value AS inventory FROM sources s LEFT JOIN app_state a ON a.key='source-summary:'||s.id ORDER BY CASE s.adapter WHEN 'planned' THEN 1 ELSE 0 END,s.name").all<CatalogueSource & Record<string,unknown>>();
    let sourceRows=await sourceQuery();if(!sourceRows.results.length){await initializeSources(env);sourceRows=await sourceQuery();}
-   const [rows,state]=await Promise.all([currentDeals(env,-1,sourceRows.results),dashboardState(env,user)]);
-   return json({...state,offers:groupOffers(rows),sources:sourceRows.results.map(s=>({...s,...shopLocation(s.id)})),nextCheck:nextCheck(),watches:state.watches.map(w=>({...w,matchCount:shoeCards(rows.filter(o=>matches(w,o))).length})),emailReady:emailReady(env)});
+   const [rows,state]=await Promise.all([currentDeals(env,-1,sourceRows.results),dashboardState(env,path==='/api/catalogue'?'public:catalogue':user)]);
+   const response=json({...(path==='/api/catalogue'?{lastScan:state.lastScan,pipeline:state.pipeline}:state),offers:groupOffers(rows),sources:sourceRows.results.map(s=>{
+    const inventory=typeof s.inventory==='string'?JSON.parse(s.inventory):null;
+    return {...s,inventory:inventory?.snapshot===s.live_snapshot_id?inventory:null,current_deals:new Set(rows.filter(o=>o.source_id===s.id).map(o=>o.product_id)).size,...shopLocation(s.id)};
+   }),nextCheck:nextCheck(),...(path==='/api/catalogue'?{}:{watches:state.watches.map(w=>({...w,matchCount:shoeCards(rows.filter(o=>matches(w,o))).length}))}),emailReady:emailReady(env)});
+   if(path==='/api/catalogue')response.headers.set('Vercel-CDN-Cache-Control','public, s-maxage=60, stale-while-revalidate=300');
+   return response;
   }
   if(path==='/api/health'&&method==='GET'){
    const run=await env.DB.prepare('SELECT id,status,started_at,completed_at,attempts FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<{id:string;status:string;completed_at:string|null}>();

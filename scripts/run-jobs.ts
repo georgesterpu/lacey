@@ -27,7 +27,11 @@ const secret = process.env.CRON_SECRET;
 if (!base || !secret)
   throw new Error("APP_URL and CRON_SECRET must be configured");
 
+const direct = process.env.DIRECT_COLLECTION === 'true'
+  ? await import('./collection-worker') : null;
 async function post<T>(path: string, body: object = {}): Promise<T> {
+  if(direct && (path==='/api/internal/scan'||path==='/api/internal/catalogue'))
+    return await direct.collect(path,body) as T;
   for (let attempt = 1; attempt <= 3; attempt++) {
     let response: Response | undefined;
     try {
