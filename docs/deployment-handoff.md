@@ -81,6 +81,64 @@ The project owns the lacey.january.ie association; the apex and www are not assi
 
 References: [Vercel Bun runtime](https://vercel.com/docs/functions/runtimes/bun), [Turso TypeScript client](https://docs.turso.tech/sdk/ts/reference), [Turso recovery](https://docs.turso.tech/cloud/point-in-time-recovery), [Resend domains](https://resend.com/docs/dashboard/domains/introduction).
 
+## Verified Neon cutover: 16 November 2026
+
+- Native Bun.SQL now serves `https://lacey.january.ie` from Neon Postgres 18.7.
+  Deployment `dpl_DRb3KEakShWc3JPKFmCecS2o4EnW`, app revision `f5133c5`.
+  Production resource `store_YjQV1uEkT1aayILC`; preview resource
+  `store_5OLKFIVyEOl7bMwd`. Both were provisioned through Vercel on Neon Free,
+  with authentication products disabled. No separate sign-up or manual copying
+  of connection credentials is required to run the app.
+- The encrypted full export copied all 17 data tables. Counts and SHA-256
+  content checks matched every field, including 5 watches, 1 subscriber,
+  1 feedback entry, all tokens/consent/suppression/receipt records, 61,643 shoe
+  variants and 18,119 historical price observations. Schema checksums matched.
+  The original Turso database remains frozen for customer writes and retained
+  for recovery; it is not the live backend. Never unlock it casually or roll
+  back to pre-Postgres code after the cutover.
+- GitHub quality run `43953561083` passed 81 tests, builds, the failing-case
+  SQLite browser guard and the real Postgres browser/subscription integration
+  check. The guarded release passed its staged operational write probe and
+  staged/public mobile and desktop browser checks. Public production smoke
+  run `43954601487` also passed. No real test emails were sent.
+- A new production scan completed in approximately 36 seconds. Actual observed
+  inventory at that check is below; these are retailer listings, not a claim of
+  unique models across shops. Quarantined and unsupported records remain excluded.
+
+| Source | Normalized listings | Size variants checked | In stock | Sold out | Sale listings |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Amphibian King | 353 | 9,053 | 303 | 50 | 78 |
+| The Run Hub | 1,153 | 7,553 | 432 | 721 | 148 |
+| Elverys | 600 | 5,920 | 594 | 6 | 312 |
+| Life Style Sports | 15 | 80 | 15 | 0 | 15 |
+
+The Run Hub held 10 invalid records and excluded 23 unsupported products;
+Life Style Sports remains deliberately limited. The API returned 630 grouped
+offers / 553 sale listings after the fresh scan. The public browser recheck
+loaded shoes, images and filters on both viewport sizes. Public responses may
+briefly serve the previous snapshot under the documented CDN policy.
+
+- The production encrypted backup endpoint was fetched and decrypted locally:
+  5 watches, 1 subscriber and 1 feedback entry survived. The archive is private
+  under `.data/backups/`. Independent retention completed successfully. Database
+  size was about 65 MB, well below the provisioned free storage allowance.
+- GitHub now has `LACEY_PG_DATABASE_URL`; both collection and nightly retention
+  use Postgres. The 08:00/20:00 Dublin schedule and production email settings are
+  preserved. Catalogue-only recovery run `43954778306` was started without email
+  and is advancing a fresh 21RUN EU crawl. Do not report a complete 21RUN import
+  until its snapshot is published. The older interrupted crawl exceeded its
+  24-hour resume window and is not silently presented as fresh.
+- MisterRunning and Running Warehouse remain blocked by product/link access;
+  Sports Direct still needs a verified connector. Its canonical source URL is
+  now `https://ie.sportsdirect.com`. This migration does not turn disconnected
+  retailers into working feeds.
+
+Neon's database is free within its plan limits; that does not imply unlimited
+GitHub runner minutes or email delivery. The catalogue worker has a 90-minute
+budget and checkpoints, so monitor actual Actions usage as coverage grows.
+References: [Neon pricing](https://neon.com/pricing),
+[Neon scale to zero](https://neon.com/docs/introduction/scale-to-zero).
+
 Direct Vercel Git import needs the Vercel GitHub app to be granted access to the private repository; the initial connection attempt was denied. CI and scheduled jobs already run on GitHub. CLI build, deployment and promotion work independently of that optional connection.
 
 ## Verified cutover: 15 November 2026
