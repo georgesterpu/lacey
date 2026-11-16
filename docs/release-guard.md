@@ -20,6 +20,8 @@ The guard requires:
 
 It never creates watches, sends email or clicks verification/unsubscribe links.
 Public catalogue responses and private watch responses are tested separately.
+The guard checks all eight coverage reports and their deal counts, timestamps
+and inventory arithmetic against the returned offers.
 Protected staging requests retain Vercel authentication; a loopback-only bridge
 uses authenticated `vercel curl` for five GET paths. No protection settings are
 weakened and no new permanent bypass credential is required.

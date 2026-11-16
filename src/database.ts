@@ -25,7 +25,7 @@ export function remoteClient(config:{TURSO_DATABASE_URL?:string;TURSO_AUTH_TOKEN
  return createClient({url:config.TURSO_DATABASE_URL,authToken:config.TURSO_AUTH_TOKEN,intMode:'number',concurrency:1,
   fetch:async(input:RequestInfo|URL,init?:RequestInit)=>{
    const start=performance.now();
-   const response=await fetch(input,{...init,keepalive:false,signal:init?.signal?AbortSignal.any([init.signal,AbortSignal.timeout(config.timeoutMs??15000)]):AbortSignal.timeout(config.timeoutMs??15000)});
+   const response=await fetch(input,{...init,signal:init?.signal?AbortSignal.any([init.signal,AbortSignal.timeout(config.timeoutMs??15000)]):AbortSignal.timeout(config.timeoutMs??15000)});
    const ms=Math.round(performance.now()-start);
    if(ms>2000)console.warn('Database HTTP headers are slow',{ms,status:response.status});
    return response;

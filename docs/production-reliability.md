@@ -2,7 +2,11 @@
 
 ## Public browsing and private watches
 
-`/api/catalogue` contains only published sale offers and shop check metadata. It
+`/api/catalogue` reads a compact, pre-grouped public projection in one indexed
+query. Each source publishes its projection with its live snapshot pointer.
+Product verification patches only that product atomically, including removals,
+so concurrent checks cannot overwrite one another or leave known bad stock in
+the public view. No member tables or size-level joins run for browsing. It
 sets no device cookie and contains no watches, addresses or verification tokens.
 Vercel may cache it for 60 seconds and serve the previous response while refreshing
 for up to five minutes. The browser also removes offers beyond the 30-hour
@@ -43,7 +47,7 @@ ended sales and sold-out shoes do not linger. Unknown size systems remain
 excluded from UK-specific alerts; no guessed conversions.
 
 Each insert uses at most 50 rows / 950 parameters, with bounded transactions.
-Public reads seek only published snapshot IDs and use 250-row keyset pages.
+Private catalogue reads seek only published snapshot IDs and use 250-row keyset pages.
 They do not scan staged catalogues. A failed snapshot never moves the live
 pointer. Source status and freshness checks, product identity/price/stock checks
 before sending, the recommendation ledger and unsubscribe suppression still
@@ -72,3 +76,9 @@ The production browser workflow checks around the two daily source checks.
 Inspect failures rather than suppressing notifications. Provider/network failures
 remain possible; no test can promise permanent availability. No live test emails
 or customer subscription mutations are needed for these read-only checks.
+
+Fresh ingestion attempts use a new snapshot namespace instead of deleting a
+partially written snapshot in the request path. Old staging data expires through
+retention. Unused price-history writes were removed: displayed savings use the
+retailer's stated reference price and cross-shop comparison, not a historical
+market-price claim. Existing historical records retain their normal expiry.

@@ -13,6 +13,9 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
   );
   const data = (await response.json()) as {
     offers: {
+      product_id: string;
+      available: number;
+      checked_at: string;
       title: string;
       price: number;
       reference_price: number;
@@ -20,19 +23,85 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
       sizes: string[];
       source_id: string;
     }[];
-    sources: { id: string; url: string }[];
+    sources: {
+      id: string;
+      url: string;
+      product_count: number;
+      current_deals: number;
+      last_success: string | null;
+      inventory?: {
+        products: number;
+        variants: number;
+        availableProducts: number;
+        soldOutProducts: number;
+      } | null;
+    }[];
     watches: unknown[];
   };
   assert.ok(
     Array.isArray(data.offers) && data.offers.length > 0,
     "Deals API returned no shoe offers",
   );
-  assert.equal(data.watches,undefined,'Public catalogue must never contain watch data');
-  const privateResponse=await fetch(new URL('/api/watchlist',base),{signal:AbortSignal.timeout(5000)});
-  assert.equal(privateResponse.status,200,'Private watchlist API failed');
-  const privateData=await privateResponse.json();
-  assert.equal(privateData.watches.length,0,'Anonymous smoke check must not see saved watches');
+  assert.equal(
+    data.watches,
+    undefined,
+    "Public catalogue must never contain watch data",
+  );
+  const privateResponse = await fetch(new URL("/api/watchlist", base), {
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(privateResponse.status, 200, "Private watchlist API failed");
+  const privateData = await privateResponse.json();
+  assert.equal(
+    privateData.watches.length,
+    0,
+    "Anonymous smoke check must not see saved watches",
+  );
+  assert.equal(
+    new Set(data.sources.map((s) => s.id)).size,
+    8,
+    "All eight shops must have distinct coverage reports",
+  );
+  for (const source of data.sources) {
+    assert.ok(
+      Number.isInteger(source.product_count) && source.product_count >= 0,
+      "Invalid inventory count",
+    );
+    assert.equal(
+      source.current_deals,
+      new Set(
+        data.offers
+          .filter((o) => o.source_id === source.id)
+          .map((o) => o.product_id),
+      ).size,
+      "Shop deal count does not match published listings",
+    );
+    if (source.last_success)
+      assert.ok(
+        Number.isFinite(Date.parse(source.last_success)),
+        "Invalid shop check time",
+      );
+    if (source.inventory) {
+      const i = source.inventory;
+      assert.equal(
+        i.products,
+        i.availableProducts + i.soldOutProducts,
+        "Stock totals disagree",
+      );
+      assert.equal(
+        i.products,
+        source.product_count,
+        "Inventory summary belongs to a different publication",
+      );
+      assert.ok(i.variants >= i.products, "Invalid size count");
+    }
+  }
   for (const offer of data.offers) {
+    assert.equal(offer.available, 1, "Sold-out variants cannot be published");
+    assert.ok(
+      Date.parse(offer.checked_at) >= Date.now() - 30 * 3600000,
+      "Stale shoe offer",
+    );
     assert.ok(
       offer.title &&
         offer.price > 0 &&
@@ -89,6 +158,11 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
         'document.querySelector("#filter-brand").options.length>1',
       ),
       "Brand filter did not populate",
+    );
+    assert.equal(
+      await view.evaluate('document.querySelectorAll(".source-card").length'),
+      data.sources.length,
+      "Shop coverage cards did not load",
     );
     assert.equal(
       await view.evaluate("document.documentElement.scrollWidth>innerWidth"),
@@ -171,7 +245,7 @@ export async function protectedSite(deployment: string) {
           .trim()
           .split(" ");
       assert.equal(status, "200", `Staged GET ${path} did not return HTTP 200`);
-      if (path === "/api/catalogue") {
+      if (path.startsWith("/api/")) {
         assert.ok(
           Number(seconds) <= 5,
           `Staged deals API took ${seconds}s; budget is 5s`,

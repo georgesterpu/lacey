@@ -1,3 +1,5 @@
+import {publicSourceStatement,publicFailureStatement,publicProgressStatement} from './public-catalogue';
+import {currentDeals} from './catalogue';
 import type { Env } from './types';
 import { twentyOneStep, RetryableRequestError, type CrawlCursor } from './twentyone';
 import { offerStatements } from './snapshots';
@@ -96,6 +98,7 @@ export async function advanceCatalogue(env: Env, runId: string) {
     const rejected = result.cursor.rejected ?? 0;
     const progress = `${result.cursor.pages} pages · ${result.cursor.products} products checked · ${rejected} quarantined`;
     await env.DB.batch([
+      publicProgressStatement(env,'21run',`Updating catalogue: ${progress}`,now),
       ...offerStatements(env, runId, result.offers, `${runId}:21run:full`),
       env.DB.prepare(
         'INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
@@ -126,12 +129,10 @@ export async function advanceCatalogue(env: Env, runId: string) {
         throw new Error(
           '21RUN catalogue unexpectedly empty or shrank by over 50%; snapshot withheld',
         );
+      const visible=await currentDeals(env,-1,[{id:'21run',status:'live',live_snapshot_id:snapshot}]);
       await env.DB.batch([
+        publicSourceStatement(env,{id:'21run',name:'21RUN',url:'https://21run.com/eu/',adapter:'twentyone',status:rejected?'partial':'live',last_attempt:now,last_success:now,product_count:totals.products,live_snapshot_id:snapshot,error:rejected?`${rejected} conflicting products withheld`:null,inventory:{snapshot,checkedAt:now,...totals,soldOutProducts:totals.products-totals.availableProducts}},visible),
         env.DB.prepare('INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('source-summary:21run',JSON.stringify({snapshot,checkedAt:now,...totals,soldOutProducts:totals.products-totals.availableProducts})),
-        env.DB.prepare(`INSERT INTO price_history(offer_id,price,observed_at)
-          SELECT id,price,checked_at FROM offer_snapshots s WHERE snapshot_id=?
-          AND COALESCE((SELECT price FROM price_history h WHERE h.offer_id=s.id ORDER BY observed_at DESC LIMIT 1),-1)!=s.price
-          ON CONFLICT(offer_id,observed_at) DO NOTHING`).bind(snapshot),
         env.DB.prepare(
           "UPDATE sources SET live_snapshot_id=?,status=?,product_count=?,last_success=?,error=? WHERE id='21run'",
         ).bind(snapshot, rejected ? 'partial' : 'live', totals.products, now,
@@ -154,13 +155,14 @@ export async function advanceCatalogue(env: Env, runId: string) {
   } catch (error) {
     const message = (error as Error).message.slice(0, 350);
     let retry: { attempts: number; after: number; createdAt: string } | undefined;
-    if (error instanceof RetryableRequestError) {
+    if (error instanceof RetryableRequestError || ['TimeoutError','AbortError'].includes((error as Error).name)) {
       const saved = await env.DB.prepare('SELECT value FROM app_state WHERE key=?')
         .bind(retryKey).first<{ value: string }>();
       const attempts = (saved ? Number(JSON.parse(saved.value).attempts) : 0) + 1;
       retry = { attempts, after: Date.now() + attempts * 15000, createdAt: now };
     }
     await env.DB.batch([
+      publicFailureStatement(env,'21run',message,now),
       ...(retry ? [env.DB.prepare('INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
         .bind(retryKey, JSON.stringify(retry))] :
         [env.DB.prepare('DELETE FROM app_state WHERE key=?').bind(retryKey)]),

@@ -7,6 +7,27 @@ try {
   fixture.setMode("stalled-mail");
   await verifySite(fixture.url);
   console.log("Shoes render even when legacy email repair is stalled.");
+  fixture.setMode("stalled-watchlist");
+  await using privateStall = new Bun.WebView({
+    width: 390,
+    height: 844,
+    backend: { type: "chrome", path: process.env.BUN_CHROME_PATH, url: false },
+  });
+  await privateStall.navigate(fixture.url);
+  const visibleBy = Date.now() + 3000;
+  while (
+    Date.now() < visibleBy &&
+    !(await privateStall.evaluate(
+      'document.querySelectorAll(".product-card").length>0',
+    ))
+  )
+    await Bun.sleep(100);
+  assert.ok(
+    await privateStall.evaluate(
+      'document.querySelectorAll(".product-card").length>0',
+    ),
+    "A stalled private watchlist must not block public shoes",
+  );
   fixture.setMode("empty");
   await assert.rejects(() => verifySite(fixture.url), /no shoe offers/);
   fixture.setMode("broken-js");

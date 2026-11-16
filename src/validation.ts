@@ -1,3 +1,4 @@
+import {publicProductStatement,publicFailureStatement} from './public-catalogue';
 import {twentyOneProduct} from './twentyone';
 import {lifestyleProduct} from './lifestyle';
 import {warehouseProduct} from './warehouse';
@@ -28,7 +29,7 @@ export async function validateProduct(env:Env,runId:string,offer:Offer):Promise<
   checked=normalize(p,source,new Date().toISOString());if(!checked.length)throw new Error('No verified shoe variants');
   }
  }catch(e){error=(e as Error).message;if(source?.id==='21run'&&error.includes('21RUN paused'))await env.DB.prepare("UPDATE sources SET status='error',error=?,live_snapshot_id=NULL,last_attempt=? WHERE id='21run'").bind(error,new Date().toISOString()).run();}
- await env.DB.prepare('INSERT INTO product_checks(run_id,source_id,product_id,status,checked_at,details,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id,product_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at,details=excluded.details,payload=excluded.payload').bind(runId,offer.source_id,offer.product_id,error?'blocked':'ok',new Date().toISOString(),error,error?null:JSON.stringify(checked)).run();
+ await env.DB.batch([...(source?.id==='21run'&&error?.includes('21RUN paused')?[publicFailureStatement(env,source.id,error,new Date().toISOString())]:[]),publicProductStatement(env,offer.source_id,offer.product_id,error?[]:checked),env.DB.prepare('INSERT INTO product_checks(run_id,source_id,product_id,status,checked_at,details,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id,product_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at,details=excluded.details,payload=excluded.payload').bind(runId,offer.source_id,offer.product_id,error?'blocked':'ok',new Date().toISOString(),error,error?null:JSON.stringify(checked))]);
  return checked;
 }
 export function sameVerifiedOffer(collected:Offer,live:Offer) {

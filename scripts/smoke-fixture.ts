@@ -3,6 +3,7 @@ import { databaseAdapter } from "../src/database";
 import { migrate } from "../src/migrations";
 import { initializeSources } from "../src/scan";
 import { offerStatements } from "../src/snapshots";
+import { rebuildPublicCatalogue } from "../src/public-catalogue";
 import { handle } from "../src/server";
 import type { Env, Offer } from "../src/types";
 
@@ -82,15 +83,23 @@ export async function smokeFixture(clientCode?: string) {
   await env.DB.prepare("INSERT INTO app_state(key,value) VALUES('last_scan',?)")
     .bind(now)
     .run();
+  await rebuildPublicCatalogue(env);
   const code = clientCode ?? (await Bun.file("dist/client/app.js").text());
-  let mode: "healthy" | "empty" | "broken-js" | "stalled" | "stalled-mail" =
-    "healthy";
+  let mode:
+    | "healthy"
+    | "empty"
+    | "broken-js"
+    | "stalled"
+    | "stalled-mail"
+    | "stalled-watchlist" = "healthy";
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     idleTimeout: 30,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/api/watchlist" && mode === "stalled-watchlist")
+        return new Promise<Response>(() => {});
       if (path === "/api/catalogue" && mode === "stalled")
         return new Promise<Response>(() => {});
       if (path === "/app.js" && mode === "broken-js")
@@ -100,7 +109,10 @@ export async function smokeFixture(clientCode?: string) {
       if (mode === "stalled-mail" && path === "/api/watches/fixture/confirm")
         return new Promise<Response>(() => {});
       const response = await handle(request, env, code);
-      if ((path === "/api/catalogue" || path==='/api/watchlist') && mode === "stalled-mail") {
+      if (
+        (path === "/api/catalogue" || path === "/api/watchlist") &&
+        mode === "stalled-mail"
+      ) {
         const data = await response.json();
         data.emailReady = true;
         data.verifications = [{ watch_id: "fixture", status: "not_sent" }];

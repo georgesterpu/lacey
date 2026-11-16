@@ -17,11 +17,9 @@ import html from '../public/index.html' with {type:'text'};
 import css from '../public/style.css' with {type:'text'};
 const signedEmailRoutes=new Set(['/confirm-email','/unsubscribe','/unsubscribe-all','/api/unsubscribe']);
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
-export function groupOffers(offers:Offer[]) {
- const groups=new Map<string,Offer & {sizes:string[];discount:number;sizeUrls:Record<string,string>}>();
- for(const o of offers){const key=[o.source_id,o.product_id,o.price,o.reference_price,o.colour,o.size_system].join('|');const found=groups.get(key);if(found){found.sizes.push(o.size);if(o.url!==found.url)found.sizeUrls[o.size]=o.url;}else groups.set(key,{...o,sizes:[o.size],discount:discount(o),sizeUrls:{}});}
- return [...groups.values()].map(g=>({...g,sizes:[...new Set(g.sizes)].sort((a,b)=>Number(a)-Number(b))})).sort((a,b)=>b.discount-a.discount||a.price-b.price);
-}
+import {groupOffers} from './offer-groups';
+export {groupOffers} from './offer-groups';
+import {readPublicCatalogue} from './public-catalogue';
 async function body(request:Request) { if(Number(request.headers.get('Content-Length'))>12000)throw new Error('Request too large');const text=await request.text();if(text.length>12000)throw new Error('Request too large');return JSON.parse(text) as Record<string,unknown>; }
 export async function handle(request:Request,env:Env,clientCode:string):Promise<Response> {
  const identity=await device(request);
@@ -103,15 +101,19 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(path.startsWith('/api/')){
   if(method!=='GET' && request.headers.get('Origin') && request.headers.get('Origin')!==url.origin)return json({error:'Origin mismatch'},403);
   if(path==='/api/watchlist'&&method==='GET')return json(await dashboardState(env,user));
-  if((path==='/api/dashboard'||path==='/api/catalogue')&&method==='GET'){
+  if(path==='/api/catalogue'&&method==='GET'){
+   const response=json({...await readPublicCatalogue(env),emailReady:emailReady(env),nextCheck:nextCheck()});
+   response.headers.set('Vercel-CDN-Cache-Control','public, s-maxage=60, stale-while-revalidate=300');
+   return response;
+  }
+  if(path==='/api/dashboard'&&method==='GET'){
    const sourceQuery=()=>env.DB.prepare("SELECT s.*,a.value AS inventory FROM sources s LEFT JOIN app_state a ON a.key='source-summary:'||s.id ORDER BY CASE s.adapter WHEN 'planned' THEN 1 ELSE 0 END,s.name").all<CatalogueSource & Record<string,unknown>>();
    let sourceRows=await sourceQuery();if(!sourceRows.results.length){await initializeSources(env);sourceRows=await sourceQuery();}
-   const [rows,state]=await Promise.all([currentDeals(env,-1,sourceRows.results),dashboardState(env,path==='/api/catalogue'?'public:catalogue':user)]);
-   const response=json({...(path==='/api/catalogue'?{lastScan:state.lastScan,pipeline:state.pipeline}:state),offers:groupOffers(rows),sources:sourceRows.results.map(s=>{
+   const [rows,state]=await Promise.all([currentDeals(env,-1,sourceRows.results),dashboardState(env,user)]);
+   const response=json({...state,offers:groupOffers(rows),sources:sourceRows.results.map(s=>{
     const inventory=typeof s.inventory==='string'?JSON.parse(s.inventory):null;
     return {...s,inventory:inventory?.snapshot===s.live_snapshot_id?inventory:null,current_deals:new Set(rows.filter(o=>o.source_id===s.id).map(o=>o.product_id)).size,...shopLocation(s.id)};
-   }),nextCheck:nextCheck(),...(path==='/api/catalogue'?{}:{watches:state.watches.map(w=>({...w,matchCount:shoeCards(rows.filter(o=>matches(w,o))).length}))}),emailReady:emailReady(env)});
-   if(path==='/api/catalogue')response.headers.set('Vercel-CDN-Cache-Control','public, s-maxage=60, stale-while-revalidate=300');
+   }),nextCheck:nextCheck(),watches:state.watches.map(w=>({...w,matchCount:shoeCards(rows.filter(o=>matches(w,o))).length})),emailReady:emailReady(env)});
    return response;
   }
   if(path==='/api/health'&&method==='GET'){
