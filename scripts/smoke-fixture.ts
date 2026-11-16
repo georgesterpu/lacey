@@ -83,7 +83,8 @@ export async function smokeFixture(clientCode?: string) {
     .bind(now)
     .run();
   const code = clientCode ?? (await Bun.file("dist/client/app.js").text());
-  let mode: "healthy" | "empty" | "broken-js" | "stalled" = "healthy";
+  let mode: "healthy" | "empty" | "broken-js" | "stalled" | "stalled-mail" =
+    "healthy";
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -96,7 +97,15 @@ export async function smokeFixture(clientCode?: string) {
         return new Response('throw new Error("Broken client fixture");', {
           headers: { "Content-Type": "text/javascript" },
         });
+      if (mode === "stalled-mail" && path === "/api/watches/fixture/confirm")
+        return new Promise<Response>(() => {});
       const response = await handle(request, env, code);
+      if (path === "/api/dashboard" && mode === "stalled-mail") {
+        const data = await response.json();
+        data.emailReady = true;
+        data.verifications = [{ watch_id: "fixture", status: "not_sent" }];
+        return Response.json(data);
+      }
       if (path === "/api/dashboard" && mode === "empty") {
         const data = await response.json();
         data.offers = [];

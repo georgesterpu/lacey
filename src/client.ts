@@ -62,12 +62,9 @@ function renderSources(){
   return `<article class="source-card">${shopIdentity(s)}<div class="source-bottom"><span class="source-status ${status==='live'?'':status==='planned'?'planned':'partial'}">${labels[status]??'Not checked yet'}</span><span>${s.last_success?`${s.product_count} shoes · ${esc(ago(s.last_success))}`:'Not connected'}</span></div>${s.error?`<details><summary>Check details</summary><p>${esc(s.error)}</p></details>`:''}<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">Visit ${esc(s.name)} ↗</a></article>`;
  }).join('');
 }
+const repairAttempted=new Set<string>();
 async function load(){
  data=await api('/api/dashboard');
- // Repair consented alerts saved by older versions that never sent an email.
- const unsent=(data!.verifications??[]).filter(v=>v.status==='not_sent');
- if(data!.emailReady&&unsent.length){await Promise.allSettled(unsent.map(v=>api(`/api/watches/${v.watch_id}/confirm`,{method:'POST',body:'{}'})));data=await api('/api/dashboard');}
-
  $('#scan-status').textContent=data!.lastScan?`Checked ${ago(data!.lastScan)}`:'First check pending';
  const brands=[...new Set(data!.offers.map(o=>o.brand))].sort(),prev=value('filter-brand');
  $('#filter-brand').innerHTML='<option value="any">Any brand</option>'+brands.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');if(brands.includes(prev))$<HTMLSelectElement>('#filter-brand').value=prev;
@@ -76,6 +73,13 @@ async function load(){
  $('#model-suggestions').innerHTML=[...new Set(data!.offers.map(shoeTitle))].slice(0,150).map(t=>`<option value="${esc(t)}"></option>`).join('');
  $('#pipeline-status').textContent=`Checks at 08:00 and 20:00, Dublin time. ${data!.pipeline?`Latest run: ${data!.pipeline.status}.`:''} Prices and links are checked again before sale emails.`;
  renderProducts();renderWatches();renderSources();
+ // Browsing must never wait for the mail provider. Try each legacy repair once
+ // per page, then refresh its state without holding the first render hostage.
+ const unsent=(data!.verifications??[]).filter(v=>v.status==='not_sent'&&!repairAttempted.has(v.watch_id));
+ if(data!.emailReady&&unsent.length){
+  for(const v of unsent)repairAttempted.add(v.watch_id);
+  void Promise.allSettled(unsent.map(v=>api(`/api/watches/${v.watch_id}/confirm`,{method:'POST',body:'{}'}))).then(()=>load()).catch(()=>{});
+ }
 }
 function selectKind(kind:string){if(kind!=='model'){$<HTMLInputElement>('[name="size_system"]').value='UK';$('#watch-size-label').textContent='UK size';}for(const name of ['category','brand','model']){$(`#${name}-field`).hidden=name!==kind;$<HTMLInputElement>(`input[name="kind"][value="${name}"]`).checked=name===kind;} $<HTMLInputElement>('[name="model"]').required=kind==='model';}
 function step(second:boolean){$('#watch-step-one').hidden=second;$('#watch-step-two').hidden=!second;$('#watch-progress').textContent=second?'Step 2 of 2':'Step 1 of 2';}

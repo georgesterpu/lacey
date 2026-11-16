@@ -4,6 +4,9 @@ import { smokeFixture } from "./smoke-fixture";
 const fixture = await smokeFixture();
 try {
   await verifySite(fixture.url);
+  fixture.setMode("stalled-mail");
+  await verifySite(fixture.url);
+  console.log("Shoes render even when legacy email repair is stalled.");
   fixture.setMode("empty");
   await assert.rejects(() => verifySite(fixture.url), /no shoe offers/);
   fixture.setMode("broken-js");
