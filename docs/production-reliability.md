@@ -19,8 +19,8 @@ writer cannot occupy the browser driver's queue.
 
 ## Collection and publication
 
-The scheduled GitHub worker uses Bun and a dedicated serialized database client.
-It collects directly into Turso, avoiding Vercel's 240-second request budget.
+The scheduled GitHub worker uses Bun and a dedicated database connection pool.
+It collects directly into Neon Postgres, avoiding Vercel's 240-second request budget.
 Only the trusted scheduled/manual workflow gets the database secrets; pull request
 checks do not. Delivery remains behind the authenticated production API and the
 collector has no Resend key. Customer data is not rebuilt during deployments.
@@ -46,7 +46,8 @@ day. A valid zero-sale refresh replaces the old snapshot with an empty one;
 ended sales and sold-out shoes do not linger. Unknown size systems remain
 excluded from UK-specific alerts; no guessed conversions.
 
-Each insert uses at most 50 rows / 950 parameters, with bounded transactions.
+Each insert uses at most 500 rows on Postgres (50 / 950 parameters on SQLite),
+with bounded collection transactions and protocol pipelines.
 Private catalogue reads seek only published snapshot IDs and use 250-row keyset pages.
 They do not scan staged catalogues. A failed snapshot never moves the live
 pointer. Source status and freshness checks, product identity/price/stock checks
@@ -82,3 +83,19 @@ partially written snapshot in the request path. Old staging data expires through
 retention. Unused price-history writes were removed: displayed savings use the
 retailer's stated reference price and cross-shop comparison, not a historical
 market-price claim. Existing historical records retain their normal expiry.
+
+Housekeeping runs independently at 03:00 Dublin time through `retention.yml`.
+Each delete is limited to 100 records and commits independently. The worker has
+a ten-minute budget, records whether another pass is needed, and resumes on its
+next run. Expiry and exact variant lookups have dedicated indexes. A maintenance
+failure cannot change a completed collection run to failed or block its digest.
+Small collection writes also use 100-variant transactions and bounded retries
+for transient database timeouts. Contract and identity failures are not retried.
+Customer backups exclude the regenerable public read model; member, consent,
+feedback, suppression and receipt data remain included. Migrations and their
+checksums commit in one server-side transaction without interactive HTTP gaps.
+
+Release verification also runs an authenticated operational write probe against
+the exact staged build. It overwrites one fixed `ops:readiness` metadata key and
+requires the database to return its fresh nonce within five seconds. It never
+creates a subscription or sends email. The browser checks remain read-only.

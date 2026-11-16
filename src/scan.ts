@@ -1,10 +1,10 @@
+import {retryTransient} from './transient';
 import type { Env, Offer } from './types';
 import { collect, sources } from './sources';
 import { scheduleSlot } from './schedule';
 import {offerStatements,inventorySummary} from './snapshots';
-import { cleanup } from './retention';
 import {publicSourceStatement,publicFailureStatement,publicStateStatement,saleOffers} from './public-catalogue';
-const connectionNotes:Record<string,string>={warehouse:'Paused: customer product links and verification returned HTTP 406. Not publishing offers until browser access is reliable.',misterrunning:'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.', sportsdirect:'Connection test timed out; automatic price/size checks are not connected.'};
+const connectionNotes:Record<string,string>={warehouse:'Paused: customer product links and verification returned HTTP 406. Not publishing offers until browser access is reliable.',misterrunning:'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.', sportsdirect:'Not connected; needs a verified price/size connector for ie.sportsdirect.com.'};
 export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter,error) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter,error=CASE WHEN excluded.adapter=\'planned\' THEN excluded.error ELSE sources.error END').bind(s.id,s.name,s.url,s.adapter,connectionNotes[s.id]??null)));}
 export async function scan(env:Env) {
  await initializeSources(env);const now=new Date().toISOString(),slot=scheduleSlot(),id=crypto.randomUUID();
@@ -15,7 +15,7 @@ export async function scan(env:Env) {
  if(run!.id!==id){
   if(run!.status==='complete'&&run!.attempts<3){const done=(await env.DB.prepare('SELECT source_id FROM source_runs WHERE run_id=?').bind(run!.id).all<{source_id:string}>()).results;const added=sources.some(s=>s.adapter!=='planned'&&s.adapter!=='twentyone'&&!done.some(d=>d.source_id===s.id));if(added){await env.DB.prepare("UPDATE scan_runs SET status='partial' WHERE id=? AND status='complete'").bind(run!.id).run();run!.status='partial';}}
   const leaseExpired=run!.heartbeat_at<new Date(Date.now()-10*60000).toISOString();
-  if(run!.attempts>=3||!((['failed','partial'].includes(run!.status))||(run!.status==='running'&&leaseExpired))){if(run!.status!=='running')await cleanup(env);return {runId:run!.id,status:run!.status,skipped:true};}
+  if(run!.attempts>=3||!((['failed','partial'].includes(run!.status))||(run!.status==='running'&&leaseExpired))){return {runId:run!.id,status:run!.status,skipped:true};}
   const lease=crypto.randomUUID();await env.DB.prepare("UPDATE scan_runs SET status='running',attempts=attempts+1,heartbeat_at=? WHERE id=? AND attempts<3 AND (status IN('failed','partial') OR (status='running' AND heartbeat_at<?))").bind(`${now}|${lease}`,run!.id,new Date(Date.now()-10*60000).toISOString()).run();
   const check=await env.DB.prepare('SELECT heartbeat_at FROM scan_runs WHERE id=?').bind(run!.id).first<{heartbeat_at:string}>();if(check?.heartbeat_at!==`${now}|${lease}`)return {runId:run!.id,status:'running',skipped:true};
  }
@@ -35,15 +35,15 @@ export async function scan(env:Env) {
     // Persist the actionable sale catalogue, not thousands of unavailable or
     // full-price sizes. Inventory totals above still describe the entire feed.
     const eligibleOffers=saleOffers(offers);
-    for(let start=0;start<eligibleOffers.length;start+=500){await env.DB.batch(offerStatements(env,runId,eligibleOffers.slice(start,start+500),snapshot));await env.DB.prepare('UPDATE scan_runs SET heartbeat_at=? WHERE id=?').bind(new Date().toISOString(),runId).run();}
+    for(let start=0;start<eligibleOffers.length;start+=100){await retryTransient(()=>env.DB.batch(offerStatements(env,runId,eligibleOffers.slice(start,start+100),snapshot)));await env.DB.prepare('UPDATE scan_runs SET heartbeat_at=? WHERE id=?').bind(new Date().toISOString(),runId).run();}
     // Publish the entire source in one atomic transaction. Failed/incomplete writes
     // never change the live pointer, so readers keep the previous good snapshot.
-    await env.DB.batch([
+    await retryTransient(()=>env.DB.batch([
      publicSourceStatement(env,{id:source.id,name:source.name,url:source.url,adapter:source.adapter,status:partial?'partial':'live',last_attempt:now,last_success:now,product_count:count,live_snapshot_id:snapshot,error:partial?details:null,inventory:{snapshot,checkedAt:now,...inventorySummary(offers)}},eligibleOffers),
      env.DB.prepare("INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(`source-summary:${source.id}`,JSON.stringify({snapshot,checkedAt:now,...inventorySummary(offers)})),
      env.DB.prepare('INSERT INTO source_runs(run_id,source_id,status,products,variants,rejected,details,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status=excluded.status,products=excluded.products,variants=excluded.variants,rejected=excluded.rejected,details=excluded.details,completed_at=excluded.completed_at').bind(runId,source.id,partial?'partial':'complete',count,offers.length,rejected,details,new Date().toISOString()),
      env.DB.prepare('UPDATE sources SET live_snapshot_id=?,status=?,last_success=?,product_count=?,error=? WHERE id=?').bind(snapshot,partial?'partial':'live',now,count,partial?details:null,source.id)
-    ]);
+    ]));
     console.info('Source published',{source:source.id,products:count,variants:offers.length});
     reports.push({source:source.name,status:partial?'partial':'complete',products:count,variants:offers.length,rejected,held});
    }catch(e){const message=(e as Error).message.slice(0,350);await env.DB.batch([publicFailureStatement(env,source.id,message,now),env.DB.prepare("UPDATE sources SET status='error',error=? WHERE id=?").bind(message,source.id),env.DB.prepare("INSERT INTO source_runs(run_id,source_id,status,details,completed_at) VALUES(?,?,'failed',?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status='failed',details=excluded.details,completed_at=excluded.completed_at").bind(runId,source.id,message,new Date().toISOString())]);reports.push({source:source.name,status:'failed',error:message});}
@@ -53,7 +53,6 @@ export async function scan(env:Env) {
   await env.DB.prepare('UPDATE scan_runs SET status=?,completed_at=?,heartbeat_at=?,errors_json=? WHERE id=?').bind(status,finished,finished,JSON.stringify(reports.filter(r=>r.status==='failed')),runId).run();
   if(counts?.good)await env.DB.prepare("INSERT INTO app_state(key,value) VALUES('last_scan',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(finished).run();
   await publicStateStatement(env,counts?.good?finished:null,{id:runId,status,completed_at:finished}).run();
-  await cleanup(env);
   return {runId,status,reports};
  }catch(e){await env.DB.prepare("UPDATE scan_runs SET status='failed',completed_at=?,errors_json=? WHERE id=?").bind(new Date().toISOString(),JSON.stringify([(e as Error).message]),runId).run();throw e;}
 }

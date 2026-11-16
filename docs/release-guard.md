@@ -18,7 +18,10 @@ The guard requires:
   horizontal overflow in mobile and desktop browsers.
 - Loading to finish, rather than a successful HTML response with a stuck client.
 
-It never creates watches, sends email or clicks verification/unsubscribe links.
+The browser check never creates watches, sends email or clicks verification/unsubscribe links.
+A separate authenticated readiness probe verifies a write to one fixed operational
+metadata key, using CRON_SECRET from the private `.env.operations.local`.
+Credentials are passed through a private temporary header file, never CLI arguments.
 Public catalogue responses and private watch responses are tested separately.
 The guard checks all eight coverage reports and their deal counts, timestamps
 and inventory arithmetic against the returned offers.
@@ -32,6 +35,13 @@ variants. It proves that empty data and broken JavaScript fail the guard. A
 stalled request must show retry and recover when retried. Failed browser runs
 retain screenshots for seven days. The independent production smoke workflow
 also checks the real public site around the morning/evening checks.
+
+The same workflow requires a real Postgres service and a separate browser/API
+integration check using native Bun.SQL. It creates a unique test schema and
+refuses to seed unless that schema is active. It covers 26,000 size rows,
+verification, immediate activation of later watches, digest replay, sold-out
+removal, unsubscribe, consistent backups and atomic rollback. Real provider
+credentials and real email delivery are never used in this check.
 
 ## 16 November incident
 

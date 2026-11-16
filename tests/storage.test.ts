@@ -27,3 +27,10 @@ test('encrypted backup restores consent, feedback, tokens and sent-shoe receipts
  const response=await handle(new Request('https://shoe.test/unsubscribe-all?token=stop-token',{method:'POST'}),{DB:destination.DB},'');expect(response.status).toBe(200);expect((await destination.DB.prepare('SELECT unsubscribed FROM subscribers').first<{unsubscribed:number}>())!.unsubscribed).toBe(1);
 });
 test('preview cannot send emails even if email credentials accidentally reach its environment',async()=>{const {DB}=await fresh(),values={VERCEL_ENV:'preview',EMAIL_ENABLED:'true',RESEND_API_KEY:'test-only',EMAIL_FROM:'test@example.test'};expect(emailReady(runtimeEnv(DB,'https://preview.test',values))).toBe(false);expect(emailReady(runtimeEnv(DB,'https://shoe.test',{...values,VERCEL_ENV:'production'}))).toBe(true);expect(emailReady(runtimeEnv(DB,'https://shoe.test',{...values,VERCEL_ENV:'production',EMAIL_ENABLED:'false'}))).toBe(false);expect(()=>remoteClient({TURSO_DATABASE_URL:'file:local.sqlite',TURSO_AUTH_TOKEN:'test-only'})).toThrow('remote TLS');});
+
+test('customer backups omit the regenerable public catalogue, keeping operational state and members',async()=>{
+ const {client}=await fresh();await member(client);
+ await client.batch(["INSERT INTO app_state VALUES('public:shop:demo','large regenerable catalogue')","INSERT INTO app_state VALUES('last_scan','retained')"],'write');
+ const data=await snapshot(client);
+ expect(data.tables.watches).toHaveLength(1);expect(data.tables.app_state).toEqual([{key:'last_scan',value:'retained'}]);
+});

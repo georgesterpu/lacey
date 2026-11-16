@@ -6,10 +6,10 @@ for(const t of tables){const source=backup.tables[t];if(!source||source.has_more
 // The initial migration has no historical jobs. A populated outbox would also
 // require its referenced scan records; never silently discard those references.
 if(backup.tables.digest_jobs.rows.length)throw new Error('Export referenced scan records before importing historical jobs');
-const client=remoteClient({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TURSO_AUTH_TOKEN:process.env.TURSO_AUTH_TOKEN}),tx=await client.transaction('write');
+const client=remoteClient({...process.env,timeoutMs:90000}),tx=await client.transaction('write');
 try{const counts:Record<string,number>={};
  for(const table of tables){const target=await tx.execute(`SELECT count(*) n FROM ${table}`);if(Number(target.rows[0]?.n)!==0)throw new Error(`Import destination not empty: ${table}`);
-  const allowed=new Set(resultRows<{name:string}>(await tx.execute(`PRAGMA table_info(${table})`)).map(c=>c.name));
+  const allowed=new Set(resultRows<{name:string}>(await tx.execute(client.dialect==='postgres'?{sql:'SELECT column_name AS name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=?',args:[table]}:`PRAGMA table_info(${table})`)).map(c=>c.name));
   for(const row of backup.tables[table].rows){const keys=Object.keys(row);if(keys.some(k=>!allowed.has(k)))throw new Error('Unexpected source column');await tx.execute({sql:`INSERT INTO ${table} (${keys.map(k=>`"${k}"`).join(',')}) VALUES(${keys.map(()=>'?').join(',')})`,args:keys.map(k=>row[k])});}
   const verified=await tx.execute(`SELECT count(*) n FROM ${table}`);counts[table]=Number(verified.rows[0]?.n);if(counts[table]!==backup.tables[table].rows.length)throw new Error(`Import count mismatch: ${table}`);
  }

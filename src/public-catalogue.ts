@@ -52,7 +52,7 @@ export async function readPublicCatalogue(env: Env) {
     sources = [];
   for (const config of approved) {
     const record = records.get(key(config.id));
-    const source: Source = record?.source ?? {
+    let source: Source = record?.source ?? {
       id: config.id,
       name: config.name,
       url: config.url,
@@ -62,6 +62,12 @@ export async function readPublicCatalogue(env: Env) {
       last_success: null,
       product_count: 0,
       error: "No published catalogue yet",
+    };
+    source = {
+      ...source,
+      name: config.name,
+      url: config.url,
+      adapter: config.adapter,
     };
     const groups: Group[] =
       record && ["live", "partial"].includes(source.status)
@@ -80,7 +86,9 @@ export async function readPublicCatalogue(env: Env) {
       ...shopLocation(source.id),
     });
   }
-  const state:{lastScan:string|null;pipeline:unknown} = records.get("public:state") ?? {
+  const state: { lastScan: string | null; pipeline: unknown } = records.get(
+    "public:state",
+  ) ?? {
     lastScan: null,
     pipeline: null,
   };
@@ -98,13 +106,9 @@ export function publicProductStatement(
   productId: string,
   offers: Offer[],
 ) {
-  return env.DB.prepare(
-    "UPDATE app_state SET value=json_set(value,?,json(?)) WHERE key=?",
-  ).bind(
-    "$.products." + JSON.stringify(productId),
-    JSON.stringify(groupOffers(saleOffers(offers))),
-    key(sourceId),
-  );
+  return patchPublic(env, sourceId, [
+    [["products", productId], groupOffers(saleOffers(offers))],
+  ]);
 }
 export function publicFailureStatement(
   env: Env,
@@ -112,9 +116,11 @@ export function publicFailureStatement(
   error: string,
   at: string,
 ) {
-  return env.DB.prepare(
-    "UPDATE app_state SET value=json_set(value,'$.source.status','error','$.source.error',?,'$.source.last_attempt',?) WHERE key=?",
-  ).bind(error, at, key(sourceId));
+  return patchPublic(env, sourceId, [
+    [["source", "status"], "error"],
+    [["source", "error"], error],
+    [["source", "last_attempt"], at],
+  ]);
 }
 export function publicStateStatement(
   env: Env,
@@ -163,7 +169,32 @@ export function publicProgressStatement(
   message: string,
   at: string,
 ) {
+  return patchPublic(env, sourceId, [
+    [["source", "error"], message],
+    [["source", "last_attempt"], at],
+  ]);
+}
+
+function patchPublic(
+  env: Env,
+  sourceId: string,
+  updates: [string[], unknown][],
+) {
+  const args: unknown[] = [];
+  let expression = "value";
+  for (const [path, value] of updates) {
+    if (env.DB.dialect === "postgres") {
+      expression = `jsonb_set((${expression})::jsonb,ARRAY(SELECT jsonb_array_elements_text(?::jsonb)),?::jsonb)`;
+      args.push(JSON.stringify(path), JSON.stringify(value));
+    } else {
+      expression = `json_set(${expression},?,json(?))`;
+      args.push(
+        "$." + path.map((p) => JSON.stringify(p)).join("."),
+        JSON.stringify(value),
+      );
+    }
+  }
   return env.DB.prepare(
-    "UPDATE app_state SET value=json_set(value,'$.source.error',?,'$.source.last_attempt',?) WHERE key=?",
-  ).bind(message, at, key(sourceId));
+    `UPDATE app_state SET value=(${expression})${env.DB.dialect === "postgres" ? "::text" : ""} WHERE key=?`,
+  ).bind(...args, key(sourceId));
 }

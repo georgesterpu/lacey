@@ -396,6 +396,7 @@ export interface CrawlCursor {
   pages: number;
   products: number;
   held: number;
+  inventory?:{products:number;variants:number;availableProducts:number;soldOutProducts:number};
   rejected?: number;
   issues?: { sku: string; url: string; reason: string }[];
   createdAt: string;

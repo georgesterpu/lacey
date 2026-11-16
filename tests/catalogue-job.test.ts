@@ -40,7 +40,7 @@ test('a catalogue resumes from its saved page and publishes only when all pages 
   expect((await advanceCatalogue(env,run)).status).toBe('complete');
   const source=await env.DB.prepare("SELECT status,product_count,live_snapshot_id FROM sources WHERE id='21run'").first();
   expect(source).toMatchObject({status:'live',product_count:1,live_snapshot_id:`${run}:21run:full`});
-  expect((await env.DB.prepare("SELECT count(*) n FROM offer_snapshots WHERE source_id='21run'").first<{n:number}>())!.n).toBe(2);
+  expect((await env.DB.prepare("SELECT count(*) n FROM offer_snapshots WHERE source_id='21run'").first<{n:number}>())!.n).toBe(1);
   expect((await advanceCatalogue(env,run)).done).toBe(true);
  });
 },15000);

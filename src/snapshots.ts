@@ -17,12 +17,13 @@ export function offerStatements(
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(offer);
   }
+  const pageSize = env.DB.dialect === "postgres" ? 500 : 50;
   for (const [key, offers] of groups)
-    for (let start = 0; start < offers.length; start += 50) {
-      const rows = offers.slice(start, start + 50);
+    for (let start = 0; start < offers.length; start += pageSize) {
+      const rows = offers.slice(start, start + pageSize);
       statements.push(
         env.DB.prepare(
-          `INSERT OR REPLACE INTO offer_snapshots
+          `INSERT INTO offer_snapshots
       (snapshot_id,run_id,${fields}) VALUES ${rows
         .map(
           () =>
@@ -30,6 +31,9 @@ export function offerStatements(
               .fill("?")
               .join(",")})`,
         )
+        .join(",")} ON CONFLICT(snapshot_id,id) DO UPDATE SET ${names
+        .filter((n) => n !== "id")
+        .map((n) => `${n}=excluded.${n}`)
         .join(",")}`,
         ).bind(
           ...rows.flatMap((row) => [

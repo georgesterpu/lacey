@@ -150,3 +150,21 @@ test('a sold-out refresh publishes an empty sale snapshot and truthful inventory
  const source=await env.DB.prepare("SELECT live_snapshot_id FROM sources WHERE id='amphibian'").first<{live_snapshot_id:string}>();
  expect((await env.DB.prepare('SELECT count(*) n FROM offer_snapshots WHERE snapshot_id=?').bind(source!.live_snapshot_id).first<{n:number}>())!.n).toBe(0);
 });
+
+test('retention prunes bounded pages while preserving member data',async()=>{
+ const {env}=await database(),old=new Date(Date.now()-100*86400000).toISOString();
+ await watch(env,'retention-watch','runner@example.test');
+ await env.DB.batch(Array.from({length:251},(_,n)=>env.DB.prepare('INSERT INTO price_history VALUES(?,?,?)').bind(`expired:${n}`,10000,old)));
+ for(const remaining of [151,51,0]){
+  await cleanup(env);
+  expect((await env.DB.prepare('SELECT count(*) n FROM price_history').first<{n:number}>())!.n).toBe(remaining);
+ }
+ expect((await env.DB.prepare('SELECT count(*) n FROM watches').first<{n:number}>())!.n).toBe(1);
+});
+test('email candidate and expiry queries have indexes as snapshots grow',async()=>{
+ const {db}=await database();
+ const lookup=db.query('EXPLAIN QUERY PLAN SELECT * FROM offer_snapshots WHERE id=?').all('variant') as {detail:string}[];
+ expect(lookup.some(p=>p.detail.includes('snapshot_offer_lookup'))).toBe(true);
+ const expiry=db.query('EXPLAIN QUERY PLAN SELECT rowid FROM offer_snapshots WHERE checked_at<? LIMIT 100').all(new Date().toISOString()) as {detail:string}[];
+ expect(expiry.some(p=>p.detail.includes('snapshot_expiry'))).toBe(true);
+});

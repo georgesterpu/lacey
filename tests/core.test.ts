@@ -115,3 +115,13 @@ test('public catalogue has shared caching without device or watch data; personal
  expect(response.headers.has('Set-Cookie')).toBe(false);
  expect(response.headers.get('Vercel-CDN-Cache-Control')).toContain('s-maxage=60');
 });
+
+test('release write probe requires scheduler authorization and touches only its operational key',async()=>{
+ const env=await database();env.CRON_SECRET='test-only';
+ expect((await handle(request('/api/internal/ready','POST',undefined,{nonce:'a'.repeat(32)}),env,'')).status).toBe(401);
+ const response=await handle(request('/api/internal/ready','POST',undefined,{nonce:'a'.repeat(32)},{Authorization:'Bearer test-only'}),env,'');
+ expect(await response.json()).toEqual({ready:true});
+ expect((await env.DB.prepare("SELECT value FROM app_state WHERE key='ops:readiness'").first<{value:string}>())!.value).toBe('a'.repeat(32));
+ expect((await env.DB.prepare('SELECT count(*) n FROM watches').first<{n:number}>())!.n).toBe(0);
+ expect((await env.DB.prepare('SELECT count(*) n FROM subscribers').first<{n:number}>())!.n).toBe(0);
+});

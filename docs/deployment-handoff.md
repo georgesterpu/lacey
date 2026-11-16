@@ -4,9 +4,11 @@ Vercel project **lacey**, ID `prj_dMJPR26hdpOfYyHecvwO6aMNeiNi`, under **george-
 
 ## Persistent data
 
-Production uses **Turso managed libSQL (SQLite)** in Dublin, connected through Vercel Marketplace on its $0 Starter plan. Preview and development use a different database, **lacey-preview**, also in Dublin. Production credentials are scoped to production; no database file is stored in Vercel’s ephemeral filesystem. Bun 1.4 runs the existing app through a small transactional SQL adapter; there is no Postgres conversion or browser-accessible database credential.
+Production uses **Neon managed Postgres**, provisioned through Vercel Marketplace on the Free plan in London (`lhr1`). Production and preview/development use independent database projects (`lacey-postgres-production` and `lacey-postgres-preview`). `LACEY_PG_DATABASE_URL` is server-only and scoped to the respective environment. The old Turso databases remain available for verified migration recovery; configuring Postgres never silently falls back to Turso after a connection failure.
 
-`src/database.ts` converts the existing prepared-statement interface to the libSQL client, including atomic batch transactions. `server.ts` is the native Bun framework entrypoint. `bun run build:vercel` bundles the application without touching the database. App builds, preview creation, promotions and code rollbacks do not recreate, seed, wipe, or restore production data.
+`src/database.ts` and `src/postgres.ts` adapt prepared, bound SQL to native `Bun.SQL`, including atomic batches and consistent read-only backups. No Node server or Postgres driver package is required. Local SQLite and legacy export support remain available. `server.ts` is the native Bun entrypoint. Builds, previews and promotions never recreate, seed, wipe or restore production data.
+
+The authorized provider migration uses `scripts/migrate-postgres.ts`: an encrypted full export, an empty independently provisioned target, schema-checksum validation, and SHA-256 comparisons of every field in every table. Inactive source-side triggers can freeze customer writes atomically during the final copy/cutover. They are absent from Postgres. Do not unlock the old source after successful cutover or run pre-Postgres code rollbacks after customer writes resume: that would create two diverging watchlists. Before releasing, require the Postgres integration CI, operational write probe and staged/public browser checks.
 
 ## Migrations and releases
 

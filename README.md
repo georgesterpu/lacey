@@ -6,7 +6,7 @@ A friendly shoe lookout with a pair of smiling soles, readable labels, and a lit
 
 ## Live behavior
 
-- Real catalogue collection: Amphibian King, The Run Hub and Elverys, including Elverys boys'/girls' running footwear. Five other requested shops remain visibly planned.
+- Catalogue collection: Amphibian King, The Run Hub and Elverys, including kids. Life Style Sports has explicitly limited coverage; 21RUN has a checkpointed EU connector. MisterRunning, Running Warehouse and Sports Direct remain disconnected where reliable product/size verification is unavailable. See the shop reports for actual publication times and counts.
 - Explicit 🇮🇪 / 🇪🇺 seller labels, shop-specific links and exact variant URLs.
 - Watches for a model, brand or category, fit/age group, size and budget. No ChatGPT sign-in. A private random HttpOnly device cookie scopes watch management.
 - Unlabelled shop sizes are never silently converted to UK. “Watch this shoe” can use that shop's explicitly labelled listed-size scheme for the selected model/source.
@@ -19,7 +19,7 @@ Read the [personality notes](docs/personality.md), [Vercel handoff](docs/deploym
 
 ## Local development
 
-Bun 1.4.4 and TypeScript 7.0.2 are pinned. The browser uses plain TypeScript/CSS. Local handlers run with Bun/native SQLite. Vercel runs Bun Functions with separate managed Turso databases for production and preview. The former Sites Worker/D1 deployment is retained during the domain transition.
+Bun 1.4.4 and TypeScript 7.0.2 are pinned. The browser uses plain TypeScript/CSS. Local handlers run with Bun/native SQLite. Vercel uses native Bun.SQL with separate Neon Postgres databases for production and preview. The old Turso database is retained for migration verification and rollback; it is never an automatic fallback after cutover.
 
 ```sh
 bun install --frozen-lockfile
@@ -78,11 +78,11 @@ Markdown percentages compare with retailer reference prices and exclude delivery
 
 ## Catalogue housekeeping
 
-Every completed or failed scan runs bounded cleanup; catch-up calls for already-completed slots also run it. The health response exposes `lastCleanup`. Old snapshots and link checks retain two days; histories, terminal notifications and unreferenced run records retain 90 days. Obsolete legacy product rows, expired confirmation tokens and old rate-limit counters are removed. Active watch preferences stay intact. See the reliability plan for the exact rules.
+Independent housekeeping runs at 03:00 Dublin time in bounded pages; a cleanup failure cannot fail collection or delay a digest. The health response exposes `lastCleanup`. Old snapshots and link checks retain two days; histories, terminal notifications and unreferenced run records retain 90 days. Obsolete legacy product rows, expired confirmation tokens and old rate-limit counters are removed. Active watch preferences and sent-shoe receipts stay intact. See the reliability plan for the exact rules.
 
 ## Vercel production and recoverable data
 
-See [the production runbook](docs/deployment-handoff.md) for the project, isolated production/preview Turso databases, immutable checksummed migrations, encrypted backups, tested empty-database restoration, domain DNS records and email setup. Builds never reset the database. `bun run build:vercel` builds the Bun app; `bun run db:migrate` performs explicit, backed-up schema changes. Preview cannot send emails.
+See [the production runbook](docs/deployment-handoff.md) for the project, isolated production/preview Postgres databases, immutable checksummed migrations, encrypted backups, tested empty-database restoration, domain DNS records and email setup. Builds never reset the database. `bun run build:vercel` builds the Bun app; `bun run db:migrate` performs explicit, backed-up schema changes. Preview cannot send emails.
 
 ## Retailer connection audit (November 2026)
 

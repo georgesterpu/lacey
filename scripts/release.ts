@@ -23,7 +23,11 @@ assert.equal(
   "",
   "Commit changes before releasing",
 );
-assert.equal(await command(['git','branch','--show-current'],true),'main','Release from main');
+assert.equal(
+  await command(["git", "branch", "--show-current"], true),
+  "main",
+  "Release from main",
+);
 const config = await Bun.file(".vercel/project.json").json();
 assert.equal(
   config.projectId,
@@ -90,6 +94,12 @@ assert.ok(
     new URL(staged.url).hostname.endsWith(".vercel.app"),
   "Unexpected staged deployment",
 );
+await command([
+  process.execPath,
+  "--env-file=.env.operations.local",
+  "scripts/write-smoke.ts",
+  staged.url,
+]);
 const proxy = await protectedSite(staged.url);
 try {
   await verifySite(proxy.url.origin);

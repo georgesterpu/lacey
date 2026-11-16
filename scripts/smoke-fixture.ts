@@ -6,10 +6,16 @@ import { offerStatements } from "../src/snapshots";
 import { rebuildPublicCatalogue } from "../src/public-catalogue";
 import { handle } from "../src/server";
 import type { Env, Offer } from "../src/types";
+import type { DatabaseClient } from "../src/database-client";
 
-export async function smokeFixture(clientCode?: string) {
-  const client = createClient({ url: ":memory:", intMode: "number" });
-  await client.execute("PRAGMA foreign_keys=ON");
+export async function smokeFixture(
+  clientCode?: string,
+  externalClient?: DatabaseClient,
+) {
+  const client: DatabaseClient =
+    externalClient ?? createClient({ url: ":memory:", intMode: "number" });
+  if (client.dialect !== "postgres")
+    await client.execute("PRAGMA foreign_keys=ON");
   const journal = await Bun.file("drizzle/meta/_journal.json").json();
   await migrate(
     client,

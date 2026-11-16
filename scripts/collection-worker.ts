@@ -1,4 +1,5 @@
 import { remoteClient, databaseAdapter } from "../src/database";
+import { retryTransient } from "../src/transient";
 import { scan } from "../src/scan";
 import { advanceCatalogue } from "../src/catalogue-job";
 // The trusted Bun scheduler owns ingestion. No email credentials or member
@@ -12,7 +13,7 @@ export async function collect(path: string, input: object) {
     const runId = String((input as { runId?: string }).runId ?? "");
     if (!/^[a-f0-9-]{36}$/.test(runId))
       throw new Error("Invalid catalogue run");
-    return advanceCatalogue(env, runId);
+    return retryTransient(() => advanceCatalogue(env, runId));
   }
   throw new Error("Worker only accepts collection operations");
 }

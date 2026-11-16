@@ -9,7 +9,7 @@ export const sources = [
  {id:'21run',name:'21RUN',url:'https://21run.com/eu/',adapter:'twentyone',collections:[],sizeSystem:'unknown'},
  {id:'warehouse',name:'Running Warehouse Europe',url:'https://www.runningwarehouse.eu',adapter:'planned',collections:[],sizeSystem:'unknown'},
  {id:'lifestyle',name:'Life Style Sports',url:'https://www.lifestylesports.com',adapter:'lifestyle',collections:[],sizeSystem:'unknown'},
- {id:'sportsdirect',name:'Sports Direct',url:'https://www.sportsdirect.ie',adapter:'planned',collections:[],sizeSystem:'unknown'},
+ {id:'sportsdirect',name:'Sports Direct',url:'https://ie.sportsdirect.com',adapter:'planned',collections:[],sizeSystem:'unknown'},
 ];
 export interface Product { id:number; title:string; vendor:string; tags:string[]|string; product_type:string; handle:string; options:{name:string;position:number}[]; images:{src:string}[]; variants:{id:number;price:string;compare_at_price:string|null;available:boolean;option1:string|null;option2:string|null;option3:string|null;featured_image?:{src:string}|null}[]; }
 export function cents(value:unknown):number|null {if(typeof value!=='string'||!/^\d+(?:\.\d{1,2})?$/.test(value))return null;const [whole,fraction='']=value.split('.');const n=Number(whole)*100+Number(fraction.padEnd(2,'0'));return Number.isSafeInteger(n)&&n>0&&n<=150000?n:null;}

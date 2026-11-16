@@ -10,7 +10,7 @@ installed Node.js or Python runtime.
 | Runtime and tools | Bun 1.4.4: server, HTTP requests, builds, package management, type checking, tests and job launcher. |
 | UI | Plain TypeScript, HTML and CSS; no frontend framework. |
 | Production hosting | Vercel's native Bun preset, `bunVersion: "1.4.x"`, Dublin region. Vercel supplies the runtime patch version. |
-| Production database | Separate managed Turso/libSQL database; `@libsql/client` 0.18.0 over TLS. |
+| Production database | Separate production/preview Neon Postgres databases over TLS, through native `Bun.SQL`. Turso is retained as the verified migration source. |
 | Local/test database | Bun's built-in `bun:sqlite`, with in-memory databases in tests. |
 | Scheduled work | GitHub Actions at 08:00/20:00 Europe/Dublin, with catch-up events and independent delivery/catalogue jobs. `bun run scan` executes `scripts/run-jobs.ts`. |
 | Email | Resend's HTTP API, with no email SDK. |
@@ -18,9 +18,10 @@ installed Node.js or Python runtime.
 
 ## How parsing works
 
-The collectors and validators are TypeScript, executed by Bun on Vercel. The
-GitHub launcher calls authenticated app endpoints; it does not perform scraping
-itself. No LLM, Python process or browser automation runs during collection.
+The collectors and validators are TypeScript. A trusted Bun GitHub worker runs
+collection directly, with checkpointed database writes. Delivery calls the
+authenticated Vercel API, keeping the email credential out of the collector.
+No LLM, Python process or browser automation runs during collection.
 
 - Amphibian King, The Run Hub and Elverys: fetch public Shopify JSON feeds,
   validate their shape, then normalize prices, stock and explicitly known sizes.
