@@ -10,6 +10,7 @@ import { planDigests } from "../src/outbox";
 import { snapshot } from "../src/backup";
 import { cleanup } from "../src/retention";
 import { digest } from "../src/identity";
+import { advanceCatalogue } from "../src/catalogue-job";
 // A new schema in an explicitly designated TEST database. Never truncate or
 // seed production, and do not give this check a Resend key.
 const url = process.env.LACEY_TEST_DATABASE_URL;
@@ -146,6 +147,36 @@ try {
   assert.equal(backup.tables.watches.length, 2);
   assert.equal(backup.tables.subscribers.length, 1);
   await cleanup(env);
+  const mrUrl =
+    "https://www.misterrunning.com/en/mizuno-wave-sky-9-mens-running-shoes-cloudscape-blue-jewel-j1gc2502-61.html";
+  const mrHtml = await Bun.file("fixtures/misterrunning-product.html").text();
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    assert.ok(url.startsWith("https://www.misterrunning.com/"));
+    return new Response(
+      url.endsWith("/robots.txt")
+        ? "User-agent: *\nAllow: /"
+        : url === mrUrl
+          ? mrHtml
+          : `<a href="${mrUrl}">Shoe</a>`,
+    );
+  }) as typeof fetch;
+  assert.equal(
+    (await advanceCatalogue(env, run.id, "misterrunning")).done,
+    false,
+  );
+  assert.equal(
+    (await advanceCatalogue(env, run.id, "misterrunning")).status,
+    "complete",
+  );
+  assert.equal(
+    (
+      await env.DB.prepare(
+        "SELECT product_count FROM sources WHERE id='misterrunning'",
+      ).first<{ product_count: number }>()
+    )?.product_count,
+    1,
+  );
   await assert.rejects(() =>
     client.batch([
       { sql: "INSERT INTO app_state VALUES('rollback-check','1')", args: [] },

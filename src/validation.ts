@@ -2,6 +2,8 @@ import {publicProductStatement,publicFailureStatement} from './public-catalogue'
 import {twentyOneProduct} from './twentyone';
 import {lifestyleProduct} from './lifestyle';
 import {warehouseProduct} from './warehouse';
+import {misterProduct} from './misterrunning';
+import {sportsProduct} from './sportsdirect';
 import type { Env, Offer } from './types';
 import { normalize, sources, type Product } from './sources';
 export async function validateProduct(env:Env,runId:string,offer:Offer):Promise<Offer[]> {
@@ -12,7 +14,9 @@ export async function validateProduct(env:Env,runId:string,offer:Offer):Promise<
  try {
   if(source?.adapter==='twentyone'){const state=await env.DB.prepare('SELECT status,error FROM sources WHERE id=?').bind(source.id).first<{status:string;error:string|null}>();if(state?.status==='error'&&state.error?.includes('21RUN paused'))throw new Error(state.error);checked=await twentyOneProduct(offer.url,new Date().toISOString());}
   else if(source?.adapter==='lifestyle'){checked=await lifestyleProduct(offer.url,new Date().toISOString());}
-  else if(source?.adapter==='warehouse'){checked=await warehouseProduct(offer.url,new Date().toISOString());}
+  else if(source?.id==='warehouse'){checked=await warehouseProduct(offer.url,new Date().toISOString());}
+  else if(source?.id==='misterrunning'){checked=await misterProduct(offer.url,new Date().toISOString());}
+  else if(source?.id==='sportsdirect'){checked=await sportsProduct(offer.url,new Date().toISOString());}
   else {
   if(!source||source.adapter!=='shopify')throw new Error('Source adapter is not approved');
   const link=new URL(offer.url),base=new URL(source.url);

@@ -5,6 +5,18 @@ import {initializeSources} from '../src/scan';
 import type {Env,Statement} from '../src/types';
 import fixture from '../fixtures/twentyone-product.json';
 
+test('the same checkpoint engine imports a second shop without duplicating a product shared by departments',async()=>{
+ const product='https://www.misterrunning.com/en/mizuno-wave-sky-9-mens-running-shoes-cloudscape-blue-jewel-j1gc2502-61.html',html=await Bun.file('fixtures/misterrunning-product.html').text();
+ await scenario(async(env,run)=>{
+  const first=await advanceCatalogue(env,run,'misterrunning');expect(first.done).toBe(false);
+  expect((await env.DB.prepare("SELECT live_snapshot_id FROM sources WHERE id='misterrunning'").first<{live_snapshot_id:string|null}>())!.live_snapshot_id).toBeNull();
+  const second=await advanceCatalogue(env,run,'misterrunning');expect(second.status).toBe('complete');
+  expect((await env.DB.prepare("SELECT product_count FROM sources WHERE id='misterrunning'").first<{product_count:number}>())!.product_count).toBe(1);
+  expect((await env.DB.prepare("SELECT count(*) n FROM offer_snapshots WHERE source_id='misterrunning'").first<{n:number}>())!.n).toBe(9);
+  const summary=await env.DB.prepare("SELECT value FROM app_state WHERE key='source-summary:misterrunning'").first<{value:string}>();expect(JSON.parse(summary!.value).variants).toBe(11);
+ },url=>url.includes('misterrunning.com')?new Response(url.endsWith('/robots.txt')?'User-agent: *\nAllow: /':url===product?html:`<a href="${product}">Shoe</a>`):null);
+},10000);
+
 const base='https://21run.com/eu/sale/running-shoes';
 async function scenario(work:(env:Env,run:string,db:Database)=>Promise<void>,response?:(url:string)=>Response|null){
  const db=new Database(':memory:');db.exec('PRAGMA foreign_keys=ON');

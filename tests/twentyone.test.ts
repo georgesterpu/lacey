@@ -7,6 +7,11 @@ import {
 } from '../src/twentyone';
 import fixture from '../fixtures/twentyone-product.json';
 const url = 'https://21run.com/eu/asics-novablast-6-men-1011c243-001';
+test('the disabled Next anchor on the final 21RUN page ends the crawl, while an active backwards link fails',()=>{
+ const base='https://21run.com/eu/sale/running-shoes',entry=JSON.stringify({sku:'test-sku',url,price:160,special_price:110}).replaceAll('"','&quot;'),product=`<div data-product="${entry}"></div>`,link=`<a class="pages-item-next pager-item" href="${base}" aria-disabled="true">Next</a>`;
+ expect(twentyOnePage(product+link,base+'?p=79').next).toBeNull();
+ expect(()=>twentyOnePage(product+link.replace('aria-disabled="true"',''),base+'?p=79')).toThrow('advance');
+});
 const parse = (f = structuredClone(fixture)) =>
   twentyOneOffers(
     url,

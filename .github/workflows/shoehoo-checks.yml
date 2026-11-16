@@ -55,8 +55,12 @@ jobs:
     needs: refresh-and-deliver
     if: ${{ always() && (inputs.catalogue_only || needs.refresh-and-deliver.result == 'success') }}
     concurrency:
-      group: lacey-catalogue
+      group: lacey-catalogue-${{ matrix.source }}
       cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [21run, warehouse, misterrunning, sportsdirect]
     runs-on: ubuntu-latest
     # The worker stops after 90 minutes with its cursor intact. It cannot delay
     # the next slot's independent delivery job or bypass retailer rate limits.
@@ -76,5 +80,6 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           CATALOGUE_ONLY: 'true'
+          CATALOGUE_SOURCE: ${{ matrix.source }}
           RESUME_RUN_ID: ${{ inputs.resume_run_id }}
         run: bun run scan

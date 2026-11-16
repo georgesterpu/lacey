@@ -15,6 +15,9 @@ Use Bun for this repository's scripts, checks, builds and tests.
   through; investigate empty/stale data or provider failures instead.
 - A staged release must pass the operational database write probe as well as
   browser checks. It writes only the fixed `ops:readiness` key, never member data.
+- Sports Direct uses the standard curl client from Bun; the staged readiness
+  check must confirm it exists. Do not enable that source on a runtime without
+  a working transport. Respect retailer robots rules and blocking responses.
 - Browser smoke checks are read-only. Do not submit watches, confirmations,
   unsubscribe links or real emails during a release check.
 - Keep automatic main-branch deployment disabled. Native Git integration stays

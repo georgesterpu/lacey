@@ -13,7 +13,8 @@ export async function collect(path: string, input: object) {
     const runId = String((input as { runId?: string }).runId ?? "");
     if (!/^[a-f0-9-]{36}$/.test(runId))
       throw new Error("Invalid catalogue run");
-    return retryTransient(() => advanceCatalogue(env, runId));
+    const sourceId=String((input as {sourceId?:string}).sourceId??'21run');
+    return retryTransient(() => advanceCatalogue(env, runId,sourceId));
   }
   throw new Error("Worker only accepts collection operations");
 }

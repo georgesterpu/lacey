@@ -390,6 +390,9 @@ export interface CatalogueProduct {
   sku: string;
 }
 export interface CrawlCursor {
+  pendingPages?: string[];
+  seenPages?: string[];
+  fingerprints?: string[];
   pageUrl: string | null;
   queue: CatalogueProduct[];
   seen: string[];
@@ -421,7 +424,7 @@ export function twentyOnePage(html: string, pageUrl: string) {
   if (!/\sdata-product="/.test(html))
     throw new Error('21RUN catalogue product data missing');
   const tag = [...html.matchAll(/<a\b[^>]*>/g)].find((m) =>
-    attribute(m[0], 'class').split(/\s+/).includes('pages-item-next'),
+    attribute(m[0], 'class').split(/\s+/).includes('pages-item-next') && attribute(m[0],'aria-disabled')!=='true',
   )?.[0];
   const next = tag ? new URL(attribute(tag, 'href'), pageUrl) : null;
   if (

@@ -118,6 +118,7 @@ if (catalogueOnly) {
   for (let step = 0; step < 2000 && Date.now() < deadline; step++) {
     const result = await post<Catalogue>("/api/internal/catalogue", {
       runId: scan.runId,
+      sourceId:process.env.CATALOGUE_SOURCE??'21run',
     });
     console.log(JSON.stringify({ stage: "catalogue", ...result }));
     if (result.done) {

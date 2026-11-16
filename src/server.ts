@@ -45,10 +45,10 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
    if(!/^[a-f0-9]{32}$/.test(nonce))return json({error:'Invalid probe'},400);
    await env.DB.batch([env.DB.prepare("INSERT INTO app_state(key,value) VALUES('ops:readiness',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(nonce)]);
    const row=await env.DB.prepare("SELECT value FROM app_state WHERE key='ops:readiness'").first<{value:string}>();
-   return json({ready:row?.value===nonce});
+   return json({ready:row?.value===nonce,curl:!!Bun.which('curl')});
   }
   if(path==='/api/internal/scan')return json(await scan(env));
-  if(path==='/api/internal/catalogue'){const input=await body(request),runId=String(input.runId??'');if(!/^[a-f0-9-]{36}$/.test(runId))return json({error:'Invalid run'},400);return json(await advanceCatalogue(env,runId));}
+  if(path==='/api/internal/catalogue'){const input=await body(request),runId=String(input.runId??'');if(!/^[a-f0-9-]{36}$/.test(runId))return json({error:'Invalid run'},400);return json(await advanceCatalogue(env,runId,String(input.sourceId??'21run')));}
   if(path==='/api/internal/dispatch'){
    const input=await body(request),runId=String(input.runId??'');if(!/^[a-f0-9-]{36}$/.test(runId))return json({error:'Invalid run'},400);
    const plan=await planDigests(env,runId),delivery=await dispatchDigests(env,runId);
@@ -164,7 +164,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   }
   return json({error:'Not found'},404);
  }
- if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com https://images.21run.com https://img.runningwarehouse.eu https://www.lifestylesports.com data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
+ if(path==='/'&&method==='GET')return new Response(html as unknown as string,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.shopify.com https://images.21run.com https://img.runningwarehouse.eu https://www.lifestylesports.com https://www.misterrunning.com https://cdn.media.amplience.net data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"}});
  return new Response('Not found',{status:404});
 }
 function page(title:string,message:string,button?:string,extra='') {return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><title>Lacey</title><link rel="stylesheet" href="/style.css"></head><body><main class="message-page"><a href="/" class="brand">lacey 😊</a><h1>${title}</h1><p>${message}</p>${extra}${button?`<form method="post"><button class="button button-dark">${button}</button></form>`:''}<a href="/" class="text-link">Back to deals</a></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin'}});}

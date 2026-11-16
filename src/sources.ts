@@ -1,15 +1,14 @@
 import {collectLifestyle} from './lifestyle';
-import {collectWarehouse} from './warehouse';
 import type { Offer } from './types';
 export const sources = [
  {id:'amphibian',name:'Amphibian King',url:'https://www.amphibianking.ie',adapter:'shopify',collections:['mens-running-shoes','womens-running-shoes'],sizeSystem:'UK'},
  {id:'runhub',name:'The Run Hub',url:'https://therunhub.ie',adapter:'shopify',collections:['all-footwear'],sizeSystem:'unknown'},
  {id:'elverys',name:'Elverys',url:'https://www.elverys.ie',adapter:'shopify',collections:['15-off-running-footwear','boys-running-footwear','girls-running-footwear'],sizeSystem:'unknown'},
- {id:'misterrunning',name:'MisterRunning',url:'https://www.misterrunning.com/en/',adapter:'planned',collections:[],sizeSystem:'unknown'},
+ {id:'misterrunning',name:'MisterRunning',url:'https://www.misterrunning.com/en/',adapter:'catalogue',collections:[],sizeSystem:'unknown'},
  {id:'21run',name:'21RUN',url:'https://21run.com/eu/',adapter:'twentyone',collections:[],sizeSystem:'unknown'},
- {id:'warehouse',name:'Running Warehouse Europe',url:'https://www.runningwarehouse.eu',adapter:'planned',collections:[],sizeSystem:'unknown'},
+ {id:'warehouse',name:'Running Warehouse Europe',url:'https://www.runningwarehouse.eu',adapter:'catalogue',collections:[],sizeSystem:'unknown'},
  {id:'lifestyle',name:'Life Style Sports',url:'https://www.lifestylesports.com',adapter:'lifestyle',collections:[],sizeSystem:'unknown'},
- {id:'sportsdirect',name:'Sports Direct',url:'https://ie.sportsdirect.com',adapter:'planned',collections:[],sizeSystem:'unknown'},
+ {id:'sportsdirect',name:'Sports Direct',url:'https://ie.sportsdirect.com',adapter:'catalogue',collections:[],sizeSystem:'unknown'},
 ];
 export interface Product { id:number; title:string; vendor:string; tags:string[]|string; product_type:string; handle:string; options:{name:string;position:number}[]; images:{src:string}[]; variants:{id:number;price:string;compare_at_price:string|null;available:boolean;option1:string|null;option2:string|null;option3:string|null;featured_image?:{src:string}|null}[]; }
 export function cents(value:unknown):number|null {if(typeof value!=='string'||!/^\d+(?:\.\d{1,2})?$/.test(value))return null;const [whole,fraction='']=value.split('.');const n=Number(whole)*100+Number(fraction.padEnd(2,'0'));return Number.isSafeInteger(n)&&n>0&&n<=150000?n:null;}
@@ -41,7 +40,7 @@ export function normalize(p:Product,source:typeof sources[number],now:string):Of
 }
 export async function collect(source:typeof sources[number],now:string) {
  if(source.adapter==='lifestyle')return collectLifestyle(now);
- if(source.adapter==='warehouse')return collectWarehouse(now);
+ if(['catalogue','twentyone'].includes(source.adapter))throw new Error('This source requires the checkpointed catalogue collector');
  const result=new Map<string,Offer>();let complete=true,rejected=0,seen=0,held=0;
  const deadline=Date.now()+45000;
  for(const collection of source.collections){

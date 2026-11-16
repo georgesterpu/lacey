@@ -13,7 +13,7 @@ export async function scan(env:Env) {
  await env.DB.prepare("INSERT INTO scan_runs(id,slot_key,status,started_at,heartbeat_at) VALUES(?,?,'running',?,?) ON CONFLICT(slot_key) DO NOTHING").bind(id,slot,now,now).run();
  let run=await env.DB.prepare('SELECT id,status,attempts,heartbeat_at FROM scan_runs WHERE slot_key=?').bind(slot).first<{id:string;status:string;attempts:number;heartbeat_at:string}>();
  if(run!.id!==id){
-  if(run!.status==='complete'&&run!.attempts<3){const done=(await env.DB.prepare('SELECT source_id FROM source_runs WHERE run_id=?').bind(run!.id).all<{source_id:string}>()).results;const added=sources.some(s=>s.adapter!=='planned'&&s.adapter!=='twentyone'&&!done.some(d=>d.source_id===s.id));if(added){await env.DB.prepare("UPDATE scan_runs SET status='partial' WHERE id=? AND status='complete'").bind(run!.id).run();run!.status='partial';}}
+  if(run!.status==='complete'&&run!.attempts<3){const done=(await env.DB.prepare('SELECT source_id FROM source_runs WHERE run_id=?').bind(run!.id).all<{source_id:string}>()).results;const added=sources.some(s=>!['planned','twentyone','catalogue'].includes(s.adapter)&&!done.some(d=>d.source_id===s.id));if(added){await env.DB.prepare("UPDATE scan_runs SET status='partial' WHERE id=? AND status='complete'").bind(run!.id).run();run!.status='partial';}}
   const leaseExpired=run!.heartbeat_at<new Date(Date.now()-10*60000).toISOString();
   if(run!.attempts>=3||!((['failed','partial'].includes(run!.status))||(run!.status==='running'&&leaseExpired))){return {runId:run!.id,status:run!.status,skipped:true};}
   const lease=crypto.randomUUID();await env.DB.prepare("UPDATE scan_runs SET status='running',attempts=attempts+1,heartbeat_at=? WHERE id=? AND attempts<3 AND (status IN('failed','partial') OR (status='running' AND heartbeat_at<?))").bind(`${now}|${lease}`,run!.id,new Date(Date.now()-10*60000).toISOString()).run();
@@ -21,7 +21,7 @@ export async function scan(env:Env) {
  }
  const runId=run!.id,reports=[];
  try{
-  for(const source of sources.filter(s=>s.adapter!=='planned'&&s.adapter!=='twentyone')){
+  for(const source of sources.filter(s=>!['planned','twentyone','catalogue'].includes(s.adapter))){
    const already=await env.DB.prepare('SELECT status FROM source_runs WHERE run_id=? AND source_id=?').bind(runId,source.id).first<{status:string}>();if(already&&['complete','partial'].includes(already.status)){reports.push({source:source.name,status:already.status});continue;}
    await env.DB.prepare('UPDATE sources SET last_attempt=? WHERE id=?').bind(now,source.id).run();
    try{

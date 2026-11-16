@@ -1,0 +1,187 @@
+import type { Offer } from "./types";
+import { retailerPage } from "./retailer-http";
+const decode = (s: string) =>
+  s.replace(/&(?:amp|apos|quot|lt|gt|euro|#39|#\d+);/g, (x) =>
+    x.startsWith("&#")
+      ? String.fromCodePoint(Number(x.slice(2, -1)))
+      : ({
+          "&amp;": "&",
+          "&apos;": "'",
+          "&#39;": "'",
+          "&quot;": '"',
+          "&lt;": "<",
+          "&gt;": ">",
+          "&euro;": "€",
+        }[x] ?? x),
+  );
+const text = (s: string) =>
+  decode(s.replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+const attr = (s: string, name: string) =>
+  decode(s.match(new RegExp(`(?:^|[\\s"'])${name}="([^"]*)"`))?.[1] ?? "");
+export function misterLink(value: string) {
+  const u = new URL(value, "https://www.misterrunning.com");
+  if (
+    u.origin !== "https://www.misterrunning.com" ||
+    !/^\/en\/[a-z0-9-]+\.html$/.test(u.pathname) ||
+    u.search ||
+    u.hash
+  )
+    throw new Error("Unapproved MisterRunning product URL");
+  return u.href;
+}
+export function misterOffers(html: string, url: string, now: string): Offer[] {
+  misterLink(url);
+  const title = text(html.match(/<title>([^<]+)<\/title>/i)?.[1] ?? "").replace(
+      /\s*[|–]\s*Mister.*$/i,
+      "",
+    ),
+    id = html.match(/id="product_id"[^>]*value="(\d+)"/)?.[1],
+    sku = html.match(/itemprop="sku" content="([^"]+)"/)?.[1],
+    brand = html.match(
+      /itemprop="brand"[\s\S]*?<meta itemprop="name" content="([^"]+)"/,
+    )?.[1],
+    price = html.match(/itemprop="price" content="(\d+\.\d{2})"/)?.[1],
+    original = text(
+      html.match(/class="first_price">([\s\S]*?)<\/span>\s*<\/span>/)?.[1] ??
+        "",
+    ).match(/(\d+(?:[.,]\d{2}))/)?.[1];
+  if (
+    !id ||
+    !sku ||
+    !brand ||
+    !title ||
+    !price ||
+    !html.includes('itemprop="priceCurrency" content="EUR"')
+  )
+    throw new Error("MisterRunning identity/price/currency missing");
+  if (
+    !new URL(url).pathname.endsWith(
+      "-" + sku.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".html",
+    )
+  )
+    throw new Error("MisterRunning product identity mismatch");
+  const identity = (
+      title +
+      " " +
+      text(
+        html.match(
+          /<h1\b[^>]*class="[^"]*prod_name[^>]*>([\s\S]*?)<\/h1>/,
+        )?.[1] ?? "",
+      )
+    ).toLowerCase(),
+    fit = /kids|junior|boys|girls|youth/.test(identity)
+      ? "kids"
+      : /women|ladies/.test(identity)
+        ? "women"
+        : /unisex/.test(identity)
+          ? "unisex"
+          : /\bmen/.test(identity)
+            ? "men"
+            : "unknown";
+  if (
+    !/shoes/.test(identity) ||
+    /spikes|sandals|slides/.test(identity) ||
+    fit === "unknown"
+  )
+    return [];
+  const image = decode(
+    html.match(/property="og:image" content="([^"]+)"/)?.[1] ?? "",
+  );
+  if (!image.startsWith("https://www.misterrunning.com/"))
+    throw new Error("MisterRunning image missing");
+  const amount = Math.round(Number(price) * 100),
+    reference = original
+      ? Math.round(Number(original.replace(",", ".")) * 100)
+      : null;
+  if (
+    amount <= 0 ||
+    amount > 150000 ||
+    (reference !== null && (reference <= 0 || reference > 150000))
+  )
+    throw new Error("MisterRunning invalid price");
+  const colour = text(
+    html.match(/<span class="color_str">([\s\S]*?)<\/span>/)?.[1] ?? "",
+  );
+  const category = /trail/.test(identity)
+    ? "trail"
+    : /structured|stability|support/.test(identity)
+      ? "stability"
+      : /racing|race/.test(identity)
+        ? "race"
+        : /neutral|road/.test(identity)
+          ? "daily"
+          : "unknown";
+  const rows = [
+    ...html.matchAll(
+      /<button\b[^>]*class="[^"]*\bopt\b[^>]*>[\s\S]*?<\/button>/g,
+    ),
+  ];
+  const model = text(
+    html.match(/<span class="name_bold">([\s\S]*?)<\/span>/)?.[1] ?? "",
+  );
+  const displayTitle = model ? `${decode(brand)} ${model}` : title;
+  if (!rows.length) throw new Error("MisterRunning size contract missing");
+  return rows.flatMap((m) => {
+    const size = attr(m[0], "data-UK"),
+      variant = attr(m[0], "value_opt");
+    if (!/^\d+(?:\.5)?$/.test(size) || !/^\d+$/.test(variant)) return [];
+    const available =
+      /\bopt_on\b/.test(attr(m[0], "class")) && />\s*Available\s*</i.test(m[0]);
+    return [
+      {
+        id: `misterrunning:${id}:${variant}`,
+        source_id: "misterrunning",
+        product_id: id,
+        title: displayTitle,
+        brand: decode(brand).toUpperCase(),
+        fit,
+        category,
+        size_system: "UK",
+        size: String(Number(size)),
+        colour,
+        price: amount,
+        reference_price: reference && reference > amount ? reference : null,
+        currency: "EUR",
+        image,
+        url,
+        available: available ? 1 : 0,
+        checked_at: now,
+      },
+    ];
+  });
+}
+export async function misterProduct(url: string, now: string) {
+  return misterOffers(await retailerPage(misterLink(url)), url, now);
+}
+export function misterListing(html: string, url: string) {
+  const products = [
+    ...new Set(
+      [
+        ...html.matchAll(
+          /href="(https:\/\/www\.misterrunning\.com\/en\/[^"/]+\.html)"/g,
+        ),
+      ]
+        .map((m) => misterLink(decode(m[1])))
+        .filter((u) => /shoes/.test(u)),
+    ),
+  ];
+  if (!products.length)
+    throw new Error("MisterRunning catalogue contract missing");
+  const tag = [...html.matchAll(/<a\b[^>]*>/g)].find((m) =>
+      /rel="next"/.test(m[0]),
+    )?.[0],
+    next = tag ? new URL(attr(tag, "href"), url) : null,
+    current = new URL(url);
+  if (
+    next &&
+    (next.origin !== current.origin ||
+      next.pathname !== current.pathname ||
+      !/^\?p=[1-9]\d*$/.test(next.search) ||
+      Number(next.searchParams.get("p")) <=
+        Number(current.searchParams.get("p") ?? 1))
+  )
+    throw new Error("MisterRunning pagination did not advance");
+  return { products, next: next?.href ?? null };
+}

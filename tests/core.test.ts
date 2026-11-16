@@ -74,7 +74,7 @@ test('scheduler requires its own secret, and failures admit only three attempts'
  expect((await handle(request('/api/internal/scan','POST'),env,'')).status).toBe(401);
  const original=globalThis.fetch;let calls=0;
  globalThis.fetch=(async()=>{calls++;return new Response('Temporary source failure',{status:503});}) as unknown as typeof fetch;
- try{for(let n=0;n<3;n++){const r=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(r.status).toBe('failed');}expect(calls).toBe(3*sources.filter(s=>s.adapter!=='planned'&&s.adapter!=='twentyone').length);const last=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(last.skipped).toBe(true);expect(calls).toBe(3*sources.filter(s=>s.adapter!=='planned'&&s.adapter!=='twentyone').length);}finally{globalThis.fetch=original;}
+ try{for(let n=0;n<3;n++){const r=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(r.status).toBe('failed');}expect(calls).toBe(12);const last=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(last.skipped).toBe(true);expect(calls).toBe(12);}finally{globalThis.fetch=original;}
 });
 
 test('signed global unsubscribe needs no identity and supports mail-client one-click POST',async()=>{
@@ -120,7 +120,7 @@ test('release write probe requires scheduler authorization and touches only its 
  const env=await database();env.CRON_SECRET='test-only';
  expect((await handle(request('/api/internal/ready','POST',undefined,{nonce:'a'.repeat(32)}),env,'')).status).toBe(401);
  const response=await handle(request('/api/internal/ready','POST',undefined,{nonce:'a'.repeat(32)},{Authorization:'Bearer test-only'}),env,'');
- expect(await response.json()).toEqual({ready:true});
+ expect(await response.json()).toEqual({ready:true,curl:!!Bun.which('curl')});
  expect((await env.DB.prepare("SELECT value FROM app_state WHERE key='ops:readiness'").first<{value:string}>())!.value).toBe('a'.repeat(32));
  expect((await env.DB.prepare('SELECT count(*) n FROM watches').first<{n:number}>())!.n).toBe(0);
  expect((await env.DB.prepare('SELECT count(*) n FROM subscribers').first<{n:number}>())!.n).toBe(0);
