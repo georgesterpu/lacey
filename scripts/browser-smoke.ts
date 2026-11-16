@@ -133,13 +133,11 @@ export async function protectedSite(deployment: string) {
     ["/style.css", "text/css; charset=utf-8"],
     ["/api/dashboard", "application/json"],
   ]);
-  return Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    async fetch(request) {
-      const path = new URL(request.url).pathname;
-      if (request.method !== "GET" || !paths.has(path))
-        return new Response("Read-only smoke bridge", { status: 405 });
+  const bodies = new Map<string, string>();
+  // Measure the origin request itself, excluding CLI sign-in/startup overhead.
+  // All bodies still come from this exact protected production deployment.
+  await Promise.all(
+    [...paths.keys()].map(async (path) => {
       const child = Bun.spawn(
         [
           "bunx",
@@ -155,16 +153,43 @@ export async function protectedSite(deployment: string) {
           "--fail",
           "--max-time",
           "10",
+          "--write-out",
+          "\n%{http_code} %{time_total}",
         ],
         { stdout: "pipe", stderr: "pipe" },
       );
-      const [code, body] = await Promise.all([
+      const [code, raw] = await Promise.all([
         child.exited,
         new Response(child.stdout).text(),
         new Response(child.stderr).text(),
       ]);
-      return new Response(code === 0 ? body : "Staged request failed", {
-        status: code === 0 ? 200 : 502,
+      assert.equal(code, 0, `Staged GET ${path} failed`);
+      const split = raw.lastIndexOf("\n"),
+        [status, seconds] = raw
+          .slice(split + 1)
+          .trim()
+          .split(" ");
+      assert.equal(status, "200", `Staged GET ${path} did not return HTTP 200`);
+      if (path === "/api/dashboard") {
+        assert.ok(
+          Number(seconds) <= 5,
+          `Staged deals API took ${seconds}s; budget is 5s`,
+        );
+        console.log(
+          `Staged origin deals API: ${Math.round(Number(seconds) * 1000)}ms`,
+        );
+      }
+      bodies.set(path, raw.slice(0, split));
+    }),
+  );
+  return Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (request.method !== "GET" || !paths.has(path))
+        return new Response("Read-only smoke bridge", { status: 405 });
+      return new Response(bodies.get(path), {
         headers: {
           "Content-Type": paths.get(path)!,
           "Cache-Control": "no-store",
@@ -173,6 +198,7 @@ export async function protectedSite(deployment: string) {
     },
   });
 }
+
 if (import.meta.main) {
   const deployment = process.env.STAGED_DEPLOYMENT;
   const proxy = deployment ? await protectedSite(deployment) : undefined;

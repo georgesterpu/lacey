@@ -9,7 +9,7 @@ import { planDigests, dispatchDigests } from './outbox';
 import { escapeHtml, digestEmail } from './email-template';
 import { nextCheck } from './schedule';
 import { sources as approvedSources } from './sources';
-import { currentDeals } from './catalogue';
+import { currentDeals, type CatalogueSource } from './catalogue';
 import { shoeCards } from './shoe-identity';
 import { releaseUnsentRecommendations } from './recommendations';
 import html from '../public/index.html' with {type:'text'};
@@ -102,15 +102,16 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
  if(path.startsWith('/api/')){
   if(method!=='GET' && request.headers.get('Origin') && request.headers.get('Origin')!==url.origin)return json({error:'Origin mismatch'},403);
   if(path==='/api/dashboard'&&method==='GET'){
-   const existing=await env.DB.prepare('SELECT count(*) n FROM sources').first<{n:number}>();if(!existing?.n)await initializeSources(env);
-   const [rows,sourceRows,last,watches]=await Promise.all([
-    currentDeals(env).then(results=>({results})),
-    env.DB.prepare('SELECT * FROM sources ORDER BY CASE adapter WHEN \'planned\' THEN 1 ELSE 0 END,name').all(),
+   const sourceQuery=()=>env.DB.prepare("SELECT * FROM sources ORDER BY CASE adapter WHEN 'planned' THEN 1 ELSE 0 END,name").all<CatalogueSource & Record<string,unknown>>();
+   let sourceRows=await sourceQuery();if(!sourceRows.results.length){await initializeSources(env);sourceRows=await sourceQuery();}
+   const [rows,last,watches,pipeline,verifications]=await Promise.all([
+    currentDeals(env,-1,sourceRows.results),
     env.DB.prepare("SELECT value FROM app_state WHERE key='last_scan'").first<{value:string}>(),
-    env.DB.prepare('SELECT id,kind,query,category,fit,size_system,size,colour,budget,min_discount,active,email_verified,created_at FROM watches WHERE owner_id=? ORDER BY created_at DESC').bind(user).all<Watch>()
+    env.DB.prepare('SELECT id,kind,query,category,fit,size_system,size,colour,budget,min_discount,active,email_verified,created_at FROM watches WHERE owner_id=? ORDER BY created_at DESC').bind(user).all<Watch>(),
+    env.DB.prepare('SELECT id,status,started_at,completed_at FROM scan_runs ORDER BY started_at DESC LIMIT 1').first(),
+    env.DB.prepare(`SELECT min(w.id) watch_id,coalesce(i.delivery_state,'not_sent') status FROM watches w LEFT JOIN email_identities i ON i.owner_id=w.owner_id AND i.email=w.email WHERE w.owner_id=? AND w.email_verified=0 AND w.active=1 GROUP BY w.email`).bind(user).all()
    ]);
-   const pipeline=await env.DB.prepare('SELECT id,status,started_at,completed_at FROM scan_runs ORDER BY started_at DESC LIMIT 1').first();
-   return json({offers:groupOffers(rows.results),sources:sourceRows.results.map(s=>({...s,...shopLocation(String(s.id))})),lastScan:last?.value??null,nextCheck:nextCheck(),pipeline,verifications:(await env.DB.prepare(`SELECT min(w.id) watch_id,coalesce(i.delivery_state,'not_sent') status FROM watches w LEFT JOIN email_identities i ON i.owner_id=w.owner_id AND i.email=w.email WHERE w.owner_id=? AND w.email_verified=0 AND w.active=1 GROUP BY w.email`).bind(user).all()).results,watches:watches.results.map(w=>({...w,matchCount:shoeCards(rows.results.filter(o=>matches(w,o))).length})),emailReady:emailReady(env)});
+   return json({offers:groupOffers(rows),sources:sourceRows.results.map(s=>({...s,...shopLocation(s.id)})),lastScan:last?.value??null,nextCheck:nextCheck(),pipeline,verifications:verifications.results,watches:watches.results.map(w=>({...w,matchCount:shoeCards(rows.filter(o=>matches(w,o))).length})),emailReady:emailReady(env)});
   }
   if(path==='/api/health'&&method==='GET'){
    const run=await env.DB.prepare('SELECT id,status,started_at,completed_at,attempts FROM scan_runs ORDER BY started_at DESC LIMIT 1').first<{id:string;status:string;completed_at:string|null}>();

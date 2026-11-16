@@ -1,4 +1,9 @@
 import type { Env, Offer } from "./types";
+export interface CatalogueSource {
+  id: string;
+  live_snapshot_id: string | null;
+  status: string;
+}
 import { freshCutoff } from "./types";
 const fields =
   "id,source_id,product_id,title,brand,category,fit,size_system,size,colour,price,reference_price,currency,image,url,available,checked_at";
@@ -22,12 +27,19 @@ const legacyDealsSql = `SELECT ${columns},NULL AS run_id FROM offers o
   WHERE o.source_id=? AND ${eligible("NULL")} ORDER BY checked_at DESC LIMIT ?`;
 // Seek only each shop's published snapshot by its primary key. The old UNION
 // view scanned staged/historical variants too and stalled the entire dashboard.
-export async function currentDeals(env: Env, limit = -1) {
+export async function currentDeals(
+  env: Env,
+  limit = -1,
+  knownSources?: CatalogueSource[],
+) {
   const sources = (
-    await env.DB.prepare(
-      "SELECT id,live_snapshot_id FROM sources WHERE status IN('live','partial')",
-    ).all<{ id: string; live_snapshot_id: string | null }>()
-  ).results;
+    knownSources ??
+    (
+      await env.DB.prepare(
+        "SELECT id,live_snapshot_id,status FROM sources WHERE status IN('live','partial')",
+      ).all<CatalogueSource>()
+    ).results
+  ).filter((source) => ["live", "partial"].includes(source.status));
   const cutoff = freshCutoff();
   const groups = await Promise.all(
     sources.map((source) =>
