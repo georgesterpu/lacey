@@ -29,13 +29,16 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
       - name: Collect, validate, match, deliver and verify
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           CATALOGUE_ONLY: ${{ inputs.catalogue_only }}
           RESUME_RUN_ID: ${{ inputs.resume_run_id }}
-        run: node scripts/run-jobs.mjs
+        run: bun run scan
       - name: Retain encrypted customer-data backup
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

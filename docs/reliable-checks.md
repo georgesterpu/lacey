@@ -16,7 +16,7 @@ flowchart LR
 
 ## Scheduling without an LLM
 
-`.github/workflows/shoehoo-checks.yml` runs ordinary Node code from `scripts/run-jobs.mjs` in a private GitHub repository. It has no prompt, model, context window, AI SDK, browser agent or per-recipient crawler. The schedule is `0 8,20 * * *` with `Europe/Dublin` as its IANA timezone. `scheduleSlot()` uses the same timezone, including daylight saving transitions. A catch-up trigger at 08:15/20:15 retries a missed primary event; it skips a completed slot. Every scheduled slot has one database run identity. Repeated triggers reuse the run; source failures have at most three attempts and stale run leases can be recovered.
+`.github/workflows/shoehoo-checks.yml` runs TypeScript directly with Bun from `scripts/run-jobs.ts` in a private GitHub repository. It has no prompt, model, context window, AI SDK, browser agent or per-recipient crawler. The schedule is `0 8,20 * * *` with `Europe/Dublin` as its IANA timezone. `scheduleSlot()` uses the same timezone, including daylight saving transitions. A catch-up trigger at 08:15/20:15 retries a missed primary event; it skips a completed slot. Every scheduled slot has one database run identity. Repeated triggers reuse the run; source failures have at most three attempts and stale run leases can be recovered.
 
 Actions concurrency prevents scheduled/manual jobs overlapping. Each HTTP writer requires the server-only `CRON_SECRET`; browser visitors and the former ChatGPT task cannot trigger the new writer. Workflow variables/secrets are set outside Git. The app remains public and account-free.
 

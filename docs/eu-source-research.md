@@ -12,7 +12,7 @@ A public deal currently means at least20% below the shop's regular/MSRP price. A
 
 ## Background work
 
-GitHub Actions schedules `scripts/run-jobs.mjs` at08:00/20:00 Europe/Dublin with15-minute catch-up triggers. It calls the authenticated Vercel scan endpoint for the existing small feeds, then repeatedly calls `/api/internal/catalogue` for the full21RUN crawl. Retailer requests run inside Vercel and are paced at least one second apart.
+GitHub Actions schedules `scripts/run-jobs.ts` at08:00/20:00 Europe/Dublin with15-minute catch-up triggers. It calls the authenticated Vercel scan endpoint for the existing small feeds, then repeatedly calls `/api/internal/catalogue` for the full21RUN crawl. Retailer requests run inside Vercel and are paced at least one second apart.
 
 The durable cursor lives in `app_state`; staged offers live in `offer_snapshots`. Each batch processes up to eight products, saves its rows and cursor atomically, and releases its short lease. Eight is a request-duration budget, **not** a limit on catalogue coverage. The next invocation resumes where it stopped. A completed crawl atomically replaces the public snapshot; the previous fresh snapshot remains available while collecting. No schema change or new queue service was needed. Old cursors expire after seven days.
 
