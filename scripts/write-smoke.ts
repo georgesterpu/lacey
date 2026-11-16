@@ -65,11 +65,6 @@ try {
     true,
     "Database did not confirm its operational write",
   );
-  assert.equal(
-    JSON.parse(raw.slice(0, split)).curl,
-    true,
-    "Sports Direct requires curl on the deployed Bun server; nothing promoted",
-  );
   assert.ok(
     Number(seconds) <= 5,
     "Database writes exceed the five-second readiness budget",

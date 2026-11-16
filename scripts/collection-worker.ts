@@ -1,5 +1,6 @@
 import { remoteClient, databaseAdapter } from "../src/database";
 import { retryTransient } from "../src/transient";
+import{prepareDelivery}from '../src/preflight';
 import { scan } from "../src/scan";
 import { advanceCatalogue } from "../src/catalogue-job";
 // The trusted Bun scheduler owns ingestion. No email credentials or member
@@ -7,6 +8,7 @@ import { advanceCatalogue } from "../src/catalogue-job";
 const client = remoteClient({ ...process.env, timeoutMs: 90000 });
 const env = { DB: databaseAdapter(client) };
 process.once("exit", () => client.close());
+export const preflight=(runId:string)=>prepareDelivery(env,runId);
 export async function collect(path: string, input: object) {
   if (path === "/api/internal/scan") return scan(env);
   if (path === "/api/internal/catalogue") {

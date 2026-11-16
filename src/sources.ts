@@ -11,10 +11,11 @@ export const sources = [
  {id:'sportsdirect',name:'Sports Direct',url:'https://ie.sportsdirect.com',adapter:'catalogue',collections:[],sizeSystem:'unknown'},
 ];
 export interface Product { id:number; title:string; vendor:string; tags:string[]|string; product_type:string; handle:string; options:{name:string;position:number}[]; images:{src:string}[]; variants:{id:number;price:string;compare_at_price:string|null;available:boolean;option1:string|null;option2:string|null;option3:string|null;featured_image?:{src:string}|null}[]; }
+export function validProductHandle(value:unknown):value is string{return typeof value==='string'&&value.length<=200&&/^[\p{L}\p{N}\p{S}][\p{L}\p{N}\p{M}\p{S}-]*$/u.test(value);}
 export function cents(value:unknown):number|null {if(typeof value!=='string'||!/^\d+(?:\.\d{1,2})?$/.test(value))return null;const [whole,fraction='']=value.split('.');const n=Number(whole)*100+Number(fraction.padEnd(2,'0'));return Number.isSafeInteger(n)&&n>0&&n<=150000?n:null;}
 export function isProduct(value:unknown):value is Product {
  if(!value||typeof value!=='object')return false;const p=value as Product;
- return Number.isSafeInteger(p.id)&&p.id>0&&typeof p.title==='string'&&p.title.length>0&&typeof p.vendor==='string'&&typeof p.product_type==='string'&&typeof p.handle==='string'&&/^[a-z0-9][a-z0-9-]*$/.test(p.handle)&&Array.isArray(p.options)&&p.options.every(o=>typeof o.name==='string'&&Number.isInteger(o.position)&&o.position>=1&&o.position<=3)&&Array.isArray(p.images)&&Array.isArray(p.variants)&&p.variants.length>0;
+ return Number.isSafeInteger(p.id)&&p.id>0&&typeof p.title==='string'&&p.title.length>0&&typeof p.vendor==='string'&&typeof p.product_type==='string'&&validProductHandle(p.handle)&&Array.isArray(p.options)&&p.options.every(o=>typeof o.name==='string'&&Number.isInteger(o.position)&&o.position>=1&&o.position<=3)&&Array.isArray(p.images)&&Array.isArray(p.variants)&&p.variants.length>0;
 }
 export function normalize(p:Product,source:typeof sources[number],now:string):Offer[] {
  if(!isProduct(p))return [];
@@ -35,7 +36,7 @@ export function normalize(p:Product,source:typeof sources[number],now:string):Of
   if(size<0.5||size>(system==='EU'?55:20))return [];
   const price=cents(v.price),reference=cents(v.compare_at_price);if(price===null)return [];
   const image=v.featured_image?.src??p.images[0]?.src??'';
-  return [{id:`${source.id}:${v.id}`,source_id:source.id,product_id:String(p.id),title:p.title,brand:p.vendor.replace(/^hoka one one$/i,'Hoka').toUpperCase(),category,fit,size_system:system,size:String(size),colour:colourOpt?String(opts[colourOpt.position-1]??''):'',price,reference_price:reference&&reference>price?reference:null,currency:'EUR',image:image.startsWith('//')?`https:${image}`:image,url:`${source.url.replace(/\/$/,'')}/products/${p.handle}?variant=${v.id}`,available:v.available?1:0,checked_at:now}];
+  return [{id:`${source.id}:${v.id}`,source_id:source.id,product_id:String(p.id),title:p.title,brand:p.vendor.replace(/^hoka one one$/i,'Hoka').toUpperCase(),category,fit,size_system:system,size:String(size),colour:colourOpt?String(opts[colourOpt.position-1]??''):'',price,reference_price:reference&&reference>price?reference:null,currency:'EUR',image:image.startsWith('//')?`https:${image}`:image,url:`${source.url.replace(/\/$/,'')}/products/${encodeURIComponent(p.handle)}?variant=${v.id}`,available:v.available?1:0,checked_at:now}];
  });
 }
 export async function collect(source:typeof sources[number],now:string) {

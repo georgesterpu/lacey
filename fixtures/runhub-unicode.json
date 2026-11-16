@@ -1,0 +1,85 @@
+{
+  "id": 11287098523990,
+  "title": "Puma Deviate Pure NITRO™",
+  "handle": "puma-deviate-pure-nitro™-2",
+  "body_html": "<p class=\"isSelectedEnd\"><span>The <strong>Puma Deviate Pure NITRO™</strong> is built for runners who want lightweight cushioning and smooth daily performance without the stiffness of a plate. Designed for everything from easy miles to uptempo training sessions, it combines a highly cushioned platform with an energetic ride that encourages you to pick up the pace naturally. With advanced <strong>NITROFOAM™</strong> cushioning, a lightweight construction and a versatile feel underfoot, it's an ideal choice for runners seeking one shoe for daily training and speed-focused workouts.</span></p>\n<p class=\"isSelectedEnd\"><strong><span>Features:</span></strong></p>\n<ul>\n<li><span>Lightweight NITROFOAM™ midsole for responsive cushioning and energy return</span></li>\n<li><span>Non-plated design for a smooth and natural ride</span></li>\n<li>\n<span>Neutral running shoe suitable for a wide range of runners</span><span></span>\n</li>\n<li><span>Maximum cushioning platform for comfort on longer runs</span></li>\n<li><span>Engineered for road running and daily training</span></li>\n<li><span>Durable rubber outsole for reliable traction</span></li>\n<li><span>Regular width fit</span></li>\n<li><span>Suitable for frequent runners</span></li>\n<li><span>Upper made with at least 30% recycled materials</span></li>\n</ul>\n<p class=\"isSelectedEnd\"><strong><span>Materials:</span></strong></p>\n<ul>\n<li><span>Textile and synthetic upper</span></li>\n<li><span>NITROFOAM™ nitrogen-infused midsole</span></li>\n<li><span>Rubber outsole</span></li>\n<li><span>Textile lining</span></li>\n<li><span>Textile sockliner</span></li>\n</ul>\n<p><span><b>For the best fit, we advise customers to avail of our detailed <a href=\"https://therunhub.ie/pages/gait-analysis\" title=\"Gait Analysis at the Run Hub\" rel=\"noopener\" target=\"_blank\">gait analysis service.</a></b></span></p>",
+  "published_at": "2026-09-21T12:47:37+01:00",
+  "created_at": "2026-09-19T11:51:41+01:00",
+  "updated_at": "2026-11-16T22:45:32+00:00",
+  "vendor": "Puma",
+  "product_type": "Men's Running Shoes",
+  "tags": [
+    "brand: Puma",
+    "category: Neutral",
+    "Collection: Footwear",
+    "collection: Mens Running Shoes",
+    "htt_offset: 8mm"
+  ],
+  "variants": [
+    {
+      "id": 55431135101270,
+      "title": "8",
+      "option1": "8",
+      "option2": null,
+      "option3": null,
+      "sku": "313904-13-8",
+      "requires_shipping": true,
+      "taxable": true,
+      "featured_image": null,
+      "available": false,
+      "price": "125.00",
+      "grams": 0,
+      "compare_at_price": "150.00",
+      "position": 1,
+      "product_id": 11287098523990,
+      "created_at": "2026-09-19T11:51:43+01:00",
+      "updated_at": "2026-11-16T22:45:32+00:00"
+    },
+    {
+      "id": 55431135002966,
+      "title": "8.5",
+      "option1": "8.5",
+      "option2": null,
+      "option3": null,
+      "sku": "313904-13-8.5",
+      "requires_shipping": true,
+      "taxable": true,
+      "featured_image": null,
+      "available": false,
+      "price": "125.00",
+      "grams": 0,
+      "compare_at_price": "150.00",
+      "position": 2,
+      "product_id": 11287098523990,
+      "created_at": "2026-09-19T11:51:43+01:00",
+      "updated_at": "2026-11-16T22:45:32+00:00"
+    }
+  ],
+  "images": [
+    {
+      "id": 85319350223190,
+      "created_at": "2026-09-21T12:47:17+01:00",
+      "position": 1,
+      "updated_at": "2026-09-21T12:47:20+01:00",
+      "product_id": 11287098523990,
+      "variant_ids": [],
+      "src": "https://cdn.shopify.com/s/files/1/0550/3267/6435/files/PumaDeviatePureNITRO_SunnyLime_LimeSqueezeTheRunHub_2.png?v=1789991240",
+      "width": 1200,
+      "height": 1200
+    }
+  ],
+  "options": [
+    {
+      "name": "Shoe Size",
+      "position": 1,
+      "values": [
+        "8",
+        "8.5",
+        "9",
+        "9.5",
+        "10",
+        "11"
+      ]
+    }
+  ]
+}

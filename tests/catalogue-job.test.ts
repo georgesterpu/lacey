@@ -4,6 +4,14 @@ import {advanceCatalogue} from '../src/catalogue-job';
 import {initializeSources} from '../src/scan';
 import type {Env,Statement} from '../src/types';
 import fixture from '../fixtures/twentyone-product.json';
+test('a known retailer cooldown does not make requests or slide the last-attempt timestamp',async()=>{
+ let requests=0;
+ await scenario(async(env,run)=>{
+  const now=new Date().toISOString();await env.DB.prepare("UPDATE sources SET error='Retailer paused: HTTP 403; retry after 12 hours',last_attempt=? WHERE id='sportsdirect'").bind(now).run();
+  expect((await advanceCatalogue(env,run,'sportsdirect')).status).toBe('paused');expect((await advanceCatalogue(env,run,'sportsdirect')).status).toBe('paused');
+  expect((await env.DB.prepare("SELECT last_attempt FROM sources WHERE id='sportsdirect'").first<{last_attempt:string}>())?.last_attempt).toBe(now);expect(requests).toBe(0);
+ },()=>{requests++;return null;});
+});
 
 test('the same checkpoint engine imports a second shop without duplicating a product shared by departments',async()=>{
  const product='https://www.misterrunning.com/en/mizuno-wave-sky-9-mens-running-shoes-cloudscape-blue-jewel-j1gc2502-61.html',html=await Bun.file('fixtures/misterrunning-product.html').text();
@@ -14,7 +22,7 @@ test('the same checkpoint engine imports a second shop without duplicating a pro
   expect((await env.DB.prepare("SELECT product_count FROM sources WHERE id='misterrunning'").first<{product_count:number}>())!.product_count).toBe(1);
   expect((await env.DB.prepare("SELECT count(*) n FROM offer_snapshots WHERE source_id='misterrunning'").first<{n:number}>())!.n).toBe(9);
   const summary=await env.DB.prepare("SELECT value FROM app_state WHERE key='source-summary:misterrunning'").first<{value:string}>();expect(JSON.parse(summary!.value).variants).toBe(11);
- },url=>url.includes('misterrunning.com')?new Response(url.endsWith('/robots.txt')?'User-agent: *\nAllow: /':url===product?html:`<a href="${product}">Shoe</a>`):null);
+ },url=>url.includes('misterrunning.com')?new Response(url.endsWith('/robots.txt')?'User-agent: *\nAllow: /':url===product?html:`<a href="${product}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a>`):null);
 },10000);
 
 const base='https://21run.com/eu/sale/running-shoes';

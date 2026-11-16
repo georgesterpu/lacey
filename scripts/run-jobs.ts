@@ -121,6 +121,10 @@ if (catalogueOnly) {
       sourceId:process.env.CATALOGUE_SOURCE??'21run',
     });
     console.log(JSON.stringify({ stage: "catalogue", ...result }));
+    if(result.status==='paused'){
+      console.log('Retailer cooldown active; no import performed and no email requested. The shop status retains its blocking reason.');
+      process.exit(0);
+    }
     if (result.done) {
       catalogueDone = true;
       catalogueFailed = result.status === "failed";
@@ -147,6 +151,7 @@ if (catalogueOnly) {
 
 let complete = false;
 for (let page = 0; page < 200; page++) {
+  if(direct)console.log(JSON.stringify({stage:'preflight',...await direct.preflight(scan.runId)}));
   const result = await post<Dispatch>("/api/internal/dispatch", {
     runId: scan.runId,
   });

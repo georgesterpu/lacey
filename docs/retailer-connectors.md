@@ -35,9 +35,19 @@ Sports Direct's public pages stalled Bun's HTTP clients during this audit. Its
 connector therefore invokes the normal system **curl** HTTP client through
 `Bun.spawn`; this is an explicit runtime dependency, not another app runtime.
 There are no cookies, browser impersonation, rotating proxies, private API calls
-or CAPTCHA solving. The blocked `/api` routes are not used. The release readiness
-probe requires curl on the deployed Bun server as well as the GitHub worker.
-Other sources continue to use Bun fetch.
+or CAPTCHA solving. The blocked `/api` routes are not used. The collection
+worker requires curl; Warehouse also uses that standard client after the native
+client received HTTP 406 on the runner. These are checks on the collection
+worker, not a promise that a retailer accepts all cloud networks. Other sources
+continue to use Bun fetch. The collection worker also performs
+pre-email stock checks. The production email server requires the existing
+15-minute verification cache; a missing check requeues delivery instead of
+fetching from Vercel, sending an unchecked offer, or losing the job. Current
+watch state, frozen retry payloads, durable receipts and unsubscribe status are
+still rechecked immediately before provider delivery.
+The production collection endpoints refuse remote retailer work: the scheduled
+worker writes results directly. This prevents a Vercel-only access failure from
+pausing a collector that runs elsewhere.
 
 The Sports Direct size strings observed here are shop labels such as `4 (37.5)`;
 their unit is not explicitly attached to the variant data. They remain
@@ -52,6 +62,13 @@ the unchanged checkpoint within bounds. Invalid individual products are recorded
 and withheld; more than 5% invalid records prevents publication. Repeated pages,
 wrong countries, currencies, SKUs, unexpected catalogue shrinkage and missing
 contracts fail closed. Public stock is checked again before sending email.
+Repeated checks during an active cooldown do not make HTTP requests or advance
+its last-attempt timestamp. The worker reports a paused import explicitly.
+
+Shopify Unicode handles, such as the actual trademark-marked Run Hub handles,
+are validated and encoded as one path segment. The same rule protects product
+verification. Trademark symbols are removed before model-key normalization so
+they cannot accidentally introduce the letters `TM` into a model identity.
 
 The small Shopify feeds and the explicitly limited Lifestyle connector retain
 their own source refresh. Full normalized inventory totals are separate from

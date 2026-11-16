@@ -35,6 +35,21 @@ export async function advanceCatalogue(
       .first())
   )
     throw new Error("Unknown scan");
+  const blocked = await env.DB.prepare(
+    "SELECT error,last_attempt FROM sources WHERE id=?",
+  )
+    .bind(sourceId)
+    .first<{ error: string | null; last_attempt: string | null }>();
+  const resumeAt = blocked?.last_attempt
+    ? Date.parse(blocked.last_attempt) + 12 * 3600000
+    : 0;
+  if (blocked?.error?.includes("paused:") && resumeAt > Date.now())
+    return {
+      done: true,
+      status: "paused",
+      retryAfterMs: resumeAt - Date.now(),
+      error: blocked.error,
+    };
   const active = await env.DB.prepare(
     `SELECT key FROM app_state WHERE key LIKE ? AND ${jsonField(env.DB, "value", "createdAt")}>? ORDER BY ${jsonField(env.DB, "value", "createdAt")} LIMIT 1`,
   )
@@ -59,8 +74,8 @@ export async function advanceCatalogue(
   const now = new Date().toISOString(),
     key = `crawl:${runId}:${sourceId}`,
     retryKey = `${key}:retry`,
-    snapshot = `${runId}:${sourceId}:full`,
     lease = crypto.randomUUID();
+  let snapshot = `${runId}:${sourceId}:full`;
   await env.DB.prepare(
     "INSERT INTO source_runs(run_id,source_id,status) VALUES(?,?,'pending') ON CONFLICT DO NOTHING",
   )
@@ -150,6 +165,10 @@ export async function advanceCatalogue(
         .bind(key)
         .first<{ value: string }>(),
       cursor = saved ? (JSON.parse(saved.value) as CrawlCursor) : null;
+    if (sourceId !== "21run")
+      snapshot =
+        cursor?.snapshot ??
+        (cursor ? snapshot : `${snapshot}:${crypto.randomUUID()}`);
     let inventory = cursor?.inventory;
     if (!inventory) {
       const baseline = await env.DB.prepare(
@@ -177,6 +196,7 @@ export async function advanceCatalogue(
             cursor,
             now,
           );
+    result.cursor.snapshot = snapshot;
     const observed = inventorySummary(result.offers);
     result.cursor.inventory = {
       products: inventory.products + observed.products,

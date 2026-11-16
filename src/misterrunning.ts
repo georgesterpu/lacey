@@ -121,7 +121,12 @@ export function misterOffers(html: string, url: string, now: string): Offer[] {
   const model = text(
     html.match(/<span class="name_bold">([\s\S]*?)<\/span>/)?.[1] ?? "",
   );
-  const displayTitle = model ? `${decode(brand)} ${model}` : title;
+  const width = identity.match(
+    /\b(?:[246]e|extra[ -]?wide|wide|narrow)\b/,
+  )?.[0];
+  const displayTitle = model
+    ? `${decode(brand)} ${model}${width && !model.toLowerCase().includes(width) ? " " + width : ""}`
+    : title;
   if (!rows.length) throw new Error("MisterRunning size contract missing");
   return rows.flatMap((m) => {
     const size = attr(m[0], "data-UK"),
@@ -156,24 +161,37 @@ export async function misterProduct(url: string, now: string) {
   return misterOffers(await retailerPage(misterLink(url)), url, now);
 }
 export function misterListing(html: string, url: string) {
-  const products = [
-    ...new Set(
-      [
-        ...html.matchAll(
-          /href="(https:\/\/www\.misterrunning\.com\/en\/[^"/]+\.html)"/g,
-        ),
-      ]
-        .map((m) => misterLink(decode(m[1])))
-        .filter((u) => /shoes/.test(u)),
-    ),
-  ];
-  if (!products.length)
-    throw new Error("MisterRunning catalogue contract missing");
+  const anchors = [...html.matchAll(/<a\b[^>]*>/g)]
+    .map((m) => m[0])
+    .filter((a) => /data-products-price=/.test(a));
+  if (!anchors.length)
+    throw new Error("MisterRunning catalogue price contract missing");
+  const observed = new Set<string>(),
+    products = new Set<string>();
+  const amount = (value: string) => {
+    const m = text(value).match(/^€\s*(\d+(?:[.,]\d{2}))$/);
+    return m ? Math.round(Number(m[1].replace(",", ".")) * 100) : null;
+  };
+  for (const a of anchors) {
+    const link = misterLink(attr(a, "href"));
+    if (!/shoes/.test(link)) continue;
+    observed.add(link);
+    const current = amount(attr(a, "data-products-price")),
+      previous = amount(attr(a, "data-products-price-old"));
+    if (current === null || current <= 0)
+      throw new Error("MisterRunning catalogue EUR price changed");
+    // Discover all colours on every page, but fetch stock only for real sales.
+    if (previous && current * 100 <= previous * 80) products.add(link);
+  }
   const tag = [...html.matchAll(/<a\b[^>]*>/g)].find((m) =>
       /rel="next"/.test(m[0]),
     )?.[0],
     next = tag ? new URL(attr(tag, "href"), url) : null,
     current = new URL(url);
+  if (next)
+    for (const key of [...next.searchParams.keys()])
+      if (/^(?:utm_|_gl$|gclid$|fbclid$|msclkid$)/i.test(key))
+        next.searchParams.delete(key);
   if (
     next &&
     (next.origin !== current.origin ||
@@ -183,5 +201,9 @@ export function misterListing(html: string, url: string) {
         Number(current.searchParams.get("p") ?? 1))
   )
     throw new Error("MisterRunning pagination did not advance");
-  return { products, next: next?.href ?? null };
+  return {
+    products: [...products],
+    next: next?.href ?? null,
+    fingerprint: [...observed].sort().join("\n"),
+  };
 }

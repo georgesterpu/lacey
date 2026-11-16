@@ -5,11 +5,13 @@ import {warehouseProduct} from './warehouse';
 import {misterProduct} from './misterrunning';
 import {sportsProduct} from './sportsdirect';
 import type { Env, Offer } from './types';
-import { normalize, sources, type Product } from './sources';
+import { normalize, sources, validProductHandle,type Product } from './sources';
+export class ProductCheckRequired extends Error {}
 export async function validateProduct(env:Env,runId:string,offer:Offer):Promise<Offer[]> {
  const cutoff=new Date(Date.now()-15*60000).toISOString();
  const cached=await env.DB.prepare('SELECT status,payload FROM product_checks WHERE run_id=? AND source_id=? AND product_id=? AND checked_at>=?').bind(runId,offer.source_id,offer.product_id,cutoff).first<{status:string;payload:string|null}>();
  if(cached)return cached.status==='ok'?JSON.parse(cached.payload??'[]'):[];
+ if(env.REQUIRE_PREFLIGHT)throw new ProductCheckRequired('A fresh worker stock check is required');
  const source=sources.find(s=>s.id===offer.source_id);let checked:Offer[]=[],error:string|null=null;
  try {
   if(source?.adapter==='twentyone'){const state=await env.DB.prepare('SELECT status,error FROM sources WHERE id=?').bind(source.id).first<{status:string;error:string|null}>();if(state?.status==='error'&&state.error?.includes('21RUN paused'))throw new Error(state.error);checked=await twentyOneProduct(offer.url,new Date().toISOString());}
@@ -20,7 +22,8 @@ export async function validateProduct(env:Env,runId:string,offer:Offer):Promise<
   else {
   if(!source||source.adapter!=='shopify')throw new Error('Source adapter is not approved');
   const link=new URL(offer.url),base=new URL(source.url);
-  if(link.origin!==base.origin||!/^\/products\/[a-z0-9-]+$/.test(link.pathname)||!/^\d+$/.test(link.searchParams.get('variant')??''))throw new Error('Product URL did not pass the allowlist');
+  const handle=link.pathname.match(/^\/products\/([^/]+)$/)?.[1];
+  if(link.origin!==base.origin||!handle||!validProductHandle(decodeURIComponent(handle))||!/^\d+$/.test(link.searchParams.get('variant')??''))throw new Error('Product URL did not pass the allowlist');
   // A successful feed response alone does not establish that the customer link works.
   let page=await fetch(`${link.origin}${link.pathname}`,{method:'HEAD',redirect:'manual',signal:AbortSignal.timeout(12000)});
   if(page.status===405)page=await fetch(`${link.origin}${link.pathname}`,{method:'GET',redirect:'manual',signal:AbortSignal.timeout(12000)});

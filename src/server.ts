@@ -45,8 +45,9 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
    if(!/^[a-f0-9]{32}$/.test(nonce))return json({error:'Invalid probe'},400);
    await env.DB.batch([env.DB.prepare("INSERT INTO app_state(key,value) VALUES('ops:readiness',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(nonce)]);
    const row=await env.DB.prepare("SELECT value FROM app_state WHERE key='ops:readiness'").first<{value:string}>();
-   return json({ready:row?.value===nonce,curl:!!Bun.which('curl')});
+   return json({ready:row?.value===nonce});
   }
+  if(env.REQUIRE_PREFLIGHT&&['/api/internal/scan','/api/internal/catalogue'].includes(path))return json({error:'Collection runs in the scheduled Bun worker'},409);
   if(path==='/api/internal/scan')return json(await scan(env));
   if(path==='/api/internal/catalogue'){const input=await body(request),runId=String(input.runId??'');if(!/^[a-f0-9-]{36}$/.test(runId))return json({error:'Invalid run'},400);return json(await advanceCatalogue(env,runId,String(input.sourceId??'21run')));}
   if(path==='/api/internal/dispatch'){

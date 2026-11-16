@@ -1,12 +1,12 @@
 import type { Offer } from './types';
-const words=(s:string):string[]=>(s.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().match(/[a-z0-9]+/g)??[]);
+const words=(s:string):string[]=>(s.replace(/[™®©]/g,'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().match(/[a-z0-9]+/g)??[]);
 const brands:Record<string,string[]>={ASICS:['asics'],HOKA:['hoka','hoka one one'],BROOKS:['brooks','brooks running'],NIKE:['nike'],ADIDAS:['adidas'],SAUCONY:['saucony'],MIZUNO:['mizuno'],PUMA:['puma'],'UNDER ARMOUR':['under armour','underarmour'],'NEW BALANCE':['new balance','newbalance'],ON:['on','on running'],ALTRA:['altra'],SALOMON:['salomon'],DYNAFIT:['dynafit'],'INOV-8':['inov8','inov 8']};
 export interface ShoeIdentity {key:string;confidence:'normalized'|'source';brand:string;model:string;width:string;}
 export function shoeIdentity(o:Pick<Offer,'title'|'brand'|'fit'|'source_id'|'product_id'|'colour'>):ShoeIdentity {
  const rawBrand=words(o.brand).join(''),brand=Object.keys(brands).find(k=>brands[k].some(a=>words(a).join('')===rawBrand));
  const fallback=():ShoeIdentity=>({key:`source:${o.source_id}:${o.product_id}`,confidence:'source',brand:o.brand,model:o.title,width:'unspecified'});
  if(!brand||!['men','women','kids','unisex'].includes(o.fit))return fallback();
- let text=o.title.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[’']/g,'');
+ let text=o.title.replace(/[™®©]/g,'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[’']/g,'');
  // Remove only explicit retailer descriptors. Keep every generation number and
  // performance qualifier (max, trail, pro, GTX, etc.). No fuzzy similarity score.
  text=text.replace(/gore[\s-]*tex/g,' gtx ');

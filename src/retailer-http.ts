@@ -19,12 +19,14 @@ async function document(url: URL): Promise<string> {
   slots.set(url.origin, at);
   if (at > Date.now()) await Bun.sleep(at - Date.now());
   let status: number, text: string;
-  if (url.hostname === "ie.sportsdirect.com") {
+  if (
+    ["ie.sportsdirect.com", "www.runningwarehouse.eu"].includes(url.hostname)
+  ) {
     // This storefront stalls Bun's HTTP transport. Use the standard curl
     // client, without browser automation, cookies, proxies or blocked APIs.
     if (!Bun.which("curl"))
       throw new RetailerRequestError(
-        "Sports Direct requires the curl HTTP transport on this worker",
+        "This retailer requires the curl HTTP transport on this worker",
       );
     const child = Bun.spawn(
       [
@@ -53,7 +55,7 @@ async function document(url: URL): Promise<string> {
     ]);
     if (code !== 0)
       throw new RetailerRequestError(
-        `Sports Direct HTTP transport failed (${code})`,
+        `Retailer HTTP transport failed (${code})`,
         [5, 6, 7, 18, 28, 35, 52, 55, 56, 92].includes(code),
       );
     const cut = body.lastIndexOf("\n");

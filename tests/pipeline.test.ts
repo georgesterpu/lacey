@@ -9,8 +9,17 @@ import {scheduleSlot,nextCheck} from '../src/schedule';
 import {currentDeals} from '../src/catalogue';
 import {cleanup} from '../src/retention';
 import {handle} from '../src/server';
+import{prepareDelivery}from '../src/preflight';
 import {matches,type Env,type Statement,type Offer,type Watch} from '../src/types';
 const open:Database[]=[];const originalFetch=globalThis.fetch;afterEach(()=>{globalThis.fetch=originalFetch;open.splice(0).forEach(d=>d.close());});
+test('the trusted worker checks stock once and the email server consumes its fresh verification without contacting retailers',async()=>{
+ const {env}=await database(),p=product(901),run=await runWithOffers(env,[p]);await watch(env,'worker-preflight','runner@example.test');
+ const messages:any[]=[];const fake=fakeShop([p],messages);await planDigests(env,run.id);env.REQUIRE_PREFLIGHT=true;
+ expect((await dispatchDigests(env,run.id)).status).toBe('awaiting_verification');expect(fake.counts()).toEqual({heads:0,products:0});expect(messages).toHaveLength(0);
+ expect((await prepareDelivery({...env,REQUIRE_PREFLIGHT:false},run.id)).checked).toBe(1);expect(fake.counts()).toEqual({heads:1,products:1});
+ const send=globalThis.fetch;globalThis.fetch=(async(input,init)=>{if(String(input)!=='https://api.resend.com/emails')throw Error('The email server must not contact the retailer');return send(input,init);}) as typeof fetch;
+ expect((await dispatchDigests(env,run.id)).sent).toBe(1);expect(messages).toHaveLength(1);
+});
 async function database(){const db=new Database(':memory:');open.push(db);db.exec('PRAGMA foreign_keys=ON');const journal=await Bun.file('drizzle/meta/_journal.json').json();for(const {tag} of journal.entries)db.exec(await Bun.file(`drizzle/${tag}.sql`).text());function statement(sql:string,args:unknown[]=[]):Statement{return {bind:(...v)=>statement(sql,v),all:async<T>()=>({results:db.query(sql).all(...args as any[]) as T[]}),first:async<T>()=>(db.query(sql).get(...args as any[])??null) as T|null,run:async()=>db.query(sql).run(...args as any[])}}let queued:Promise<unknown>=Promise.resolve();const env:Env={DB:{prepare:sql=>statement(sql),batch:statements=>{const operation=queued.then(async()=>{db.exec('BEGIN');try{const result=[];for(const s of statements)result.push(await s.run());db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}});queued=operation.catch(()=>{});return operation;}},RESEND_API_KEY:'test-only',EMAIL_FROM:'test@example.test',APP_URL:'https://shoe.test',CRON_SECRET:'test-only'};await initializeSources(env);return {env,db};}
 function product(id=100,size='9',price='100.00'):Product{return {id,title:`ASICS Gel Kayano ${id} Mens`,vendor:'ASICS',handle:`kayano-${id}`,tags:['Running','stability'],product_type:'Men’s Running Shoes',options:[{name:'Size',position:1}],images:[{src:'https://cdn.shopify.com/example.jpg'}],variants:[{id:id*10+1,option1:`UK ${size}`,option2:null,option3:null,price,compare_at_price:'160.00',available:true}]};}
 function js(p:Product){return {...p,type:p.product_type,variants:p.variants.map(v=>({...v,price:cents(v.price),compare_at_price:cents(v.compare_at_price)}))};}

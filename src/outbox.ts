@@ -3,7 +3,7 @@ import { matches, freshCutoff } from './types';
 import { digest, randomToken } from './identity';
 import { digestEmail } from './email-template';
 import { emailReady, reserveDelivery } from './email';
-import { sameVerifiedOffer, validateProduct } from './validation';
+import { sameVerifiedOffer, validateProduct,ProductCheckRequired } from './validation';
 import { comparableSize, shoeCards, shoeIdentity } from './shoe-identity';
 import { releaseUnsentRecommendations, reserveRecommendation } from './recommendations';
 interface Candidate {watchId:string;watchIds?:string[];offerId:string;price:number;}
@@ -74,7 +74,8 @@ export async function dispatchDigests(env:Env,runId?:string,limit=1){
   }
   // Four concurrent product checks; shared per-product promises avoid checking
   // every size separately. Bound each request to one recipient / 24 products.
-  for(let i=0;i<candidates.length;i+=4)await Promise.all(candidates.slice(i,i+4).map(check));
+  try{for(let i=0;i<candidates.length;i+=4)await Promise.all(candidates.slice(i,i+4).map(check));}
+  catch(error){if(!(error instanceof ProductCheckRequired))throw error;await env.DB.prepare("UPDATE digest_jobs SET status='queued',lease_until=NULL,error='Awaiting worker stock check' WHERE id=?").bind(job.id).run();return {sent,status:'awaiting_verification',remaining:await remaining(env,runId),blocked};}
   const cards=shoeCards(valid).slice(0,6),selected:Offer[]=[];const keys:string[]=[];
   for(const card of cards){if(await reserveRecommendation(env,job.email_hash,card.key,job.id)){keys.push(card.key);selected.push(...card.options);}}
   if(!selected.length){await suppress(env,job.id,'No new, fresh, verified matches');continue;}

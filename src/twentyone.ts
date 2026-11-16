@@ -390,6 +390,7 @@ export interface CatalogueProduct {
   sku: string;
 }
 export interface CrawlCursor {
+  snapshot?: string;
   pendingPages?: string[];
   seenPages?: string[];
   fingerprints?: string[];

@@ -11,6 +11,7 @@ import { snapshot } from "../src/backup";
 import { cleanup } from "../src/retention";
 import { digest } from "../src/identity";
 import { advanceCatalogue } from "../src/catalogue-job";
+import { prepareDelivery } from "../src/preflight";
 // A new schema in an explicitly designated TEST database. Never truncate or
 // seed production, and do not give this check a Resend key.
 const url = process.env.LACEY_TEST_DATABASE_URL;
@@ -107,10 +108,38 @@ try {
     "A replay must not duplicate the digest",
   );
   const before = (await currentDeals(env)).length;
+  const variants = await currentDeals(env);
+  const queued = await env.DB.prepare(
+    "SELECT candidates FROM digest_jobs LIMIT 1",
+  ).first<{ candidates: string }>();
+  const wanted = new Set(
+    (JSON.parse(queued!.candidates) as { offerId: string }[]).map(
+      (c) => variants.find((v) => v.id === c.offerId)!.product_id,
+    ),
+  );
+  await env.DB.batch(
+    [...wanted].map((id) =>
+      env.DB.prepare(
+        "INSERT INTO product_checks(run_id,source_id,product_id,status,checked_at,payload) VALUES(?,?,?,?,?,?)",
+      ).bind(
+        run.id,
+        "amphibian",
+        id,
+        "ok",
+        new Date().toISOString(),
+        JSON.stringify(variants.filter((v) => v.product_id === id)),
+      ),
+    ),
+  );
+  env.REQUIRE_PREFLIGHT = true;
+  assert.ok(
+    (await prepareDelivery(env, run.id)).checked > 0,
+    "The email server can consume fresh worker verification from Postgres",
+  );
   await env.DB.batch([
     publicProductStatement(env, "amphibian", "0", []),
     env.DB.prepare(
-      "INSERT INTO product_checks(run_id,source_id,product_id,status,checked_at,payload) VALUES(?,?,?,?,?,?)",
+      "INSERT INTO product_checks(run_id,source_id,product_id,status,checked_at,payload) VALUES(?,?,?,?,?,?) ON CONFLICT(run_id,source_id,product_id) DO UPDATE SET checked_at=excluded.checked_at,payload=excluded.payload",
     ).bind(run.id, "amphibian", "0", "ok", new Date().toISOString(), "[]"),
   ]);
   assert.equal(
@@ -158,7 +187,7 @@ try {
         ? "User-agent: *\nAllow: /"
         : url === mrUrl
           ? mrHtml
-          : `<a href="${mrUrl}">Shoe</a>`,
+          : `<a href="${mrUrl}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a>`,
     );
   }) as typeof fetch;
   assert.equal(

@@ -6,10 +6,19 @@ import {
   warehouseLink,
   warehouseListing,
 } from "../src/warehouse";
+import{normalize,sources,validProductHandle}from '../src/sources';
+import{shoeIdentity}from '../src/shoe-identity';
+import unicodeProduct from '../fixtures/runhub-unicode.json';
 const now = "2026-11-16T22:00:00Z",
   mr =
     "https://www.misterrunning.com/en/mizuno-wave-sky-9-mens-running-shoes-cloudscape-blue-jewel-j1gc2502-61.html",
   sd = "https://ie.sportsdirect.com/nike-structure-26-trainers-womens-211073";
+test('real Unicode Shopify handles are encoded as one safe path segment and trademark marks do not change model identity',()=>{
+ const source=sources.find(s=>s.id==='runhub')!,rows=normalize(unicodeProduct,source,now);expect(rows.length).toBeGreaterThan(0);expect(rows[0].url).toContain('%E2%84%A2');
+ for(const h of ['../other','a/b','a?x=1','a%2fb','a#fragment','a\\b'])expect(validProductHandle(h)).toBe(false);
+ const base={...rows[0],title:'Puma Deviate Nitro 3',fit:'men'};
+ expect(shoeIdentity({...base,title:'Puma Deviate NITRO™ 3'}).key).toBe(shoeIdentity(base).key);
+});
 test("Sports Direct single-colour JSON-LD and unseparated Flight text records preserve oversold stock as unavailable", async () => {
   const h = await Bun.file("fixtures/sportsdirect-single-product.html").text(),
     rows = sportsOffers(
@@ -86,11 +95,12 @@ test("retailer URLs reject other countries, account/API routes and arbitrary que
   expect(() => warehouseLink(wh + "?vat=DE")).toThrow();
 });
 test("catalogue pagination follows the next page and cannot change country or repeat page numbers", () => {
-  const m = `<a href="${mr}">Shoe</a><a rel="next" href="https://www.misterrunning.com/en/mens-running-shoes/?p=2">Next</a>`;
+  const m = `<a href="${mr}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a><a rel="next" href="https://www.misterrunning.com/en/mens-running-shoes/?p=2">Next</a>`;
   expect(
     misterListing(m, "https://www.misterrunning.com/en/mens-running-shoes/")
       .products,
   ).toEqual([mr]);
+  expect(misterListing(m.replace('?p=2','?p=2&_gl=tracking&gclid=tracking'),'https://www.misterrunning.com/en/mens-running-shoes/').next).toBe('https://www.misterrunning.com/en/mens-running-shoes/?p=2');
   expect(() =>
     misterListing(
       m,
