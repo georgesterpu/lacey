@@ -22,9 +22,9 @@ const eligible = (
       AND json_extract(v.value,'$.price')=o.price
       AND json_extract(v.value,'$.reference_price')=o.reference_price)))`;
 export const snapshotDealsSql = `SELECT ${columns},o.run_id FROM offer_snapshots o
-  WHERE o.snapshot_id=? AND ${eligible("o.run_id")} ORDER BY checked_at DESC LIMIT ?`;
+  WHERE o.snapshot_id=? AND o.id>? AND ${eligible("o.run_id")} ORDER BY o.id LIMIT ?`;
 const legacyDealsSql = `SELECT ${columns},NULL AS run_id FROM offers o
-  WHERE o.source_id=? AND ${eligible("NULL")} ORDER BY checked_at DESC LIMIT ?`;
+  WHERE o.source_id=? AND o.id>? AND ${eligible("NULL")} ORDER BY o.id LIMIT ?`;
 // libSQL's typed row protocol repeats metadata for every field of every size.
 // Return one JSON value per shop instead, avoiding thousands of driver row
 // wrappers on the function's CPU while preserving every verified size fact.
@@ -47,20 +47,28 @@ export async function currentDeals(
   ).filter((source) => ["live", "partial"].includes(source.status));
   if (!sources.length) return [];
   const cutoff = freshCutoff();
-  const sql = sources
-    .map((source) =>
-      packed(source.live_snapshot_id ? snapshotDealsSql : legacyDealsSql),
-    )
-    .join(" UNION ALL ");
-  const parameters = sources.flatMap((source) => [
-    source.live_snapshot_id ?? source.id,
-    cutoff,
-    limit,
-  ]);
-  const result = await env.DB.prepare(sql)
-    .bind(...parameters)
-    .all<{ offers: string }>();
-  const groups = result.results.map((row) => JSON.parse(row.offers) as Offer[]);
+  // Bound each HTTP result, rather than building a single multi-megabyte
+  // libSQL response. Keyset pagination preserves all variants without OFFSET
+  // scans as a shop grows. Shop reads can proceed independently.
+  const groups = await Promise.all(
+    sources.map(async (source) => {
+      const sql = packed(
+        source.live_snapshot_id ? snapshotDealsSql : legacyDealsSql,
+      );
+      const offers: Offer[] = [];
+      let cursor = "";
+      while (true) {
+        const result = await env.DB.prepare(sql)
+          .bind(source.live_snapshot_id ?? source.id, cursor, cutoff, 250)
+          .first<{ offers: string }>();
+        if (!result) throw new Error("Catalogue page unavailable");
+        const page = JSON.parse(result.offers) as Offer[];
+        offers.push(...page);
+        if (page.length < 250) return offers;
+        cursor = page[page.length - 1].id;
+      }
+    }),
+  );
   const rows = groups
     .flat()
     .sort((a, b) => b.checked_at.localeCompare(a.checked_at));
