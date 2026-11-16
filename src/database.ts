@@ -22,6 +22,6 @@ export function databaseAdapter(client:Client):DB{return {
 export function remoteClient(config:{TURSO_DATABASE_URL?:string;TURSO_AUTH_TOKEN?:string}):Client {
  if(!config.TURSO_DATABASE_URL||!config.TURSO_AUTH_TOKEN)throw new Error('Production database credentials are missing');
  const url=new URL(config.TURSO_DATABASE_URL);if(!['libsql:','https:'].includes(url.protocol))throw new Error('Production requires a remote TLS database');
- return createClient({url:config.TURSO_DATABASE_URL,authToken:config.TURSO_AUTH_TOKEN,intMode:'number',concurrency:4,
+ return createClient({url:config.TURSO_DATABASE_URL,authToken:config.TURSO_AUTH_TOKEN,intMode:'number',concurrency:1,
   fetch:(input:RequestInfo|URL,init?:RequestInit)=>fetch(input,{...init,signal:init?.signal?AbortSignal.any([init.signal,AbortSignal.timeout(15000)]):AbortSignal.timeout(15000)})});
 }

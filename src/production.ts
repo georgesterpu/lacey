@@ -5,6 +5,7 @@ import type {Client} from '@libsql/client/web';
 import {runtimeEnv} from './runtime-env';
 import clientCode from '../dist/client/app.js' with {type:'text'};
 let client:Client|undefined;
+console.info('Lacey runtime',{bun:Bun.version});
 function connection(){return client??=remoteClient({TURSO_DATABASE_URL:process.env.TURSO_DATABASE_URL,TURSO_AUTH_TOKEN:process.env.TURSO_AUTH_TOKEN});}
 export async function appFetch(request:Request){
  try{
