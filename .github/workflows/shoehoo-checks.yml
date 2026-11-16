@@ -18,21 +18,20 @@ on:
         default: ''
 permissions:
   contents: read
-concurrency:
-  group: shoehoo-checks
-  cancel-in-progress: false
 jobs:
   refresh-and-deliver:
+    if: ${{ !inputs.catalogue_only }}
+    concurrency:
+      group: lacey-checks
+      cancel-in-progress: false
     runs-on: ubuntu-latest
-    # The EU sale catalogue has around 2,500 products. Keep the polite 1 req/s
-    # pace and allow time for all pages plus bounded retries.
-    timeout-minutes: 120
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
-      - name: Collect, validate, match, deliver and verify
+      - name: Refresh shops, deliver verified matches and back up
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -47,3 +46,25 @@ jobs:
           path: .data/backups/*.enc
           retention-days: 14
           if-no-files-found: warn
+  catalogue:
+    needs: refresh-and-deliver
+    if: ${{ always() && (inputs.catalogue_only || needs.refresh-and-deliver.result == 'success') }}
+    concurrency:
+      group: lacey-catalogue
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    # The worker stops after 90 minutes with its cursor intact. It cannot delay
+    # the next slot's independent delivery job or bypass retailer rate limits.
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - name: Advance the checkpointed EU catalogue without email
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CATALOGUE_ONLY: 'true'
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+        run: bun run scan

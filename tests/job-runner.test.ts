@@ -130,7 +130,6 @@ test("the Bun runner completes the scheduled pipeline and writes a private backu
   expect(result.code).toBe(0);
   expect(result.paths).toEqual([
     "/api/internal/scan",
-    "/api/internal/catalogue",
     "/api/internal/dispatch",
     "/api/health",
     "/api/internal/backup",

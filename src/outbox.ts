@@ -1,5 +1,5 @@
 import type { Env, Offer, Watch } from './types';
-import { matches } from './types';
+import { matches, freshCutoff } from './types';
 import { digest, randomToken } from './identity';
 import { digestEmail } from './email-template';
 import { emailReady, reserveDelivery } from './email';
@@ -25,7 +25,7 @@ export async function planDigests(env:Env,runId:string,limit=20){
    for(const w of watches){
     // Indexed size buckets, never a fresh crawl for each subscriber. Collect all
     // watches before ranking so their order cannot pick a more expensive shop.
-    const rows=(await env.DB.prepare(`SELECT o.* FROM offer_snapshots o JOIN sources s ON s.id=o.source_id AND s.live_snapshot_id=o.snapshot_id WHERE o.run_id=? AND o.size_system=? AND o.size=? AND (?='' OR o.source_id=?) AND o.available=1 AND o.price<=? AND o.reference_price>o.price AND o.price*100<=o.reference_price*(100-?) AND (?='any' AND o.fit IN('men','women','unisex') OR o.fit=? OR (? IN('men','women') AND o.fit='unisex')) AND (?!='category' OR ?='any' OR o.category=?) AND (?!='brand' OR o.brand=?) AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.watch_id=? AND n.offer_id=o.id AND n.status='sent' AND n.price<=o.price) ORDER BY o.price,o.id LIMIT 60`).bind(runId,w.size_system.startsWith('STORE:')?'unknown':w.size_system,w.size,w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.budget,w.min_discount,w.fit,w.fit,w.fit,w.kind,w.category,w.category,w.kind,w.query.toUpperCase(),w.id).all<Offer>()).results;
+    const rows=(await env.DB.prepare(`SELECT o.* FROM offer_snapshots o JOIN sources s ON s.id=o.source_id AND s.live_snapshot_id=o.snapshot_id WHERE o.checked_at>=? AND s.status IN('live','partial') AND o.size_system=? AND o.size=? AND (?='' OR o.source_id=?) AND o.available=1 AND o.price<=? AND o.reference_price>o.price AND o.price*100<=o.reference_price*(100-?) AND (?='any' AND o.fit IN('men','women','unisex') OR o.fit=? OR (? IN('men','women') AND o.fit='unisex')) AND (?!='category' OR ?='any' OR o.category=?) AND (?!='brand' OR o.brand=?) AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.watch_id=? AND n.offer_id=o.id AND n.status='sent' AND n.price<=o.price) ORDER BY o.price,o.id LIMIT 60`).bind(freshCutoff(),w.size_system.startsWith('STORE:')?'unknown':w.size_system,w.size,w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.size_system.startsWith('STORE:')?w.size_system.slice(6):'',w.budget,w.min_discount,w.fit,w.fit,w.fit,w.kind,w.category,w.category,w.kind,w.query.toUpperCase(),w.id).all<Offer>()).results;
     for(const offer of rows.filter(o=>matches(w,o))){const existing=found.get(offer.id);if(existing)existing.candidate.watchIds!.push(w.id);else found.set(offer.id,{offer,candidate:{watchId:w.id,watchIds:[w.id],offerId:offer.id,price:offer.price}});}
    }
    const receipts=new Set((await env.DB.prepare('SELECT shoe_key FROM recommendation_receipts WHERE email_hash=?').bind(hash).all<{shoe_key:string}>()).results.map(r=>r.shoe_key));
@@ -64,7 +64,7 @@ export async function dispatchDigests(env:Env,runId?:string,limit=1){
   const checks=new Map<string,Promise<Offer[]>>();
   async function check(candidate:Candidate){
    if(frozenIds&&!frozenIds.has(`${candidate.offerId}:${candidate.price}`))return;
-   const offer=await env.DB.prepare('SELECT o.* FROM offer_snapshots o JOIN sources s ON s.live_snapshot_id=o.snapshot_id AND s.id=o.source_id WHERE o.id=? AND o.run_id=?').bind(candidate.offerId,runId).first<Offer>();if(!offer||offer.price!==candidate.price||receipts.has(shoeIdentity(offer).key))return;
+   const offer=await env.DB.prepare(`SELECT o.* FROM offer_snapshots o JOIN sources s ON s.live_snapshot_id=o.snapshot_id AND s.id=o.source_id WHERE o.id=? AND o.checked_at>=? AND s.status IN('live','partial')`).bind(candidate.offerId,freshCutoff()).first<Offer>();if(!offer||offer.price!==candidate.price||receipts.has(shoeIdentity(offer).key))return;
    const active=(candidate.watchIds??[candidate.watchId]).map(id=>watches.get(id)).filter((w):w is Watch=>!!w&&matches(w,offer));if(!active.length)return;
    const product=`${offer.source_id}:${offer.product_id}`;
    if(!checks.has(product)){if(checks.size>=24)return;checks.set(product,validateProduct(env,runId!,offer));}

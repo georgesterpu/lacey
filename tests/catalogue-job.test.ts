@@ -109,3 +109,15 @@ test('robots restrictions are permanent failures, never product skips or automat
   expect(requests).toBe(1);
  },url=>url.endsWith('/robots.txt')?(requests++,new Response('User-agent: *\nDisallow: /')):null);
 },10000);
+
+test('a new email slot resumes the existing catalogue instead of starting again',async()=>{
+ await scenario(async(env,run)=>{
+  await checkpoint(env,run);
+  const later=crypto.randomUUID(),now=new Date().toISOString();
+  await env.DB.prepare("INSERT INTO scan_runs(id,slot_key,status,started_at,heartbeat_at) VALUES(?,?,'complete',?,?)").bind(later,later,now,now).run();
+  expect(await advanceCatalogue(env,later)).toMatchObject({done:true,status:'complete',checked:1});
+  const source=await env.DB.prepare("SELECT live_snapshot_id FROM sources WHERE id='21run'").first<{live_snapshot_id:string}>();
+  expect(source!.live_snapshot_id).toBe(`${run}:21run:full`);
+  expect(await advanceCatalogue(env,later)).toMatchObject({done:true,status:'complete',skipped:true});
+ });
+},10000);

@@ -30,7 +30,7 @@ test('email budget is enforced globally across recipients',async()=>{const {env}
 test('provider failure is stored for retry and never marked sent',async()=>{const {env}=await database(),ps=[product(109)],run=await runWithOffers(env,ps);await watch(env,'w','one@example.test');const messages:any[]=[];fakeShop(ps,messages,{failEmail:true});await planDigests(env,run.id);expect((await dispatchDigests(env,run.id,5)).sent).toBe(0);const job=await env.DB.prepare('SELECT status,attempts,payload FROM digest_jobs').first<{status:string;attempts:number;payload:string}>();expect(job!.status).toBe('queued');expect(job!.attempts).toBe(1);expect(job!.payload).toContain('Lacey');});
 test('email rendering escapes content and keeps direct retailer URLs',()=>{const offer=normalize(product(),sources[0],new Date().toISOString())[0];const rendered=digestEmail([{...offer,title:'<script>alert(1)</script>'}], 'https://shoe.test','https://shoe.test/unsubscribe-all?token=test');expect(rendered.html).not.toContain('<script>');expect(rendered.html).toContain('&lt;script&gt;');expect(rendered.html).toContain(offer.url.replace(/&/g,'&amp;'));expect(rendered.html).toContain('🇮🇪');});
 
-test('recipient lookup uses the composite size index instead of a full run scan',async()=>{const {db}=await database();const plan=db.query("EXPLAIN QUERY PLAN SELECT o.* FROM offer_snapshots o JOIN sources s ON s.id=o.source_id AND s.live_snapshot_id=o.snapshot_id WHERE o.run_id=? AND o.size_system=? AND o.size=? AND o.available=1 AND o.price<=?").all('run','UK','9',12000) as {detail:string}[];expect(plan.some(p=>p.detail.includes('snapshot_recipient'))).toBe(true);});
+test('recipient lookup uses the composite size index instead of a full run scan',async()=>{const {db}=await database();const plan=db.query("EXPLAIN QUERY PLAN SELECT o.* FROM offer_snapshots o JOIN sources s ON s.id=o.source_id AND s.live_snapshot_id=o.snapshot_id WHERE o.checked_at>=? AND o.size_system=? AND o.size=? AND o.available=1 AND o.price<=?").all(new Date().toISOString(),'UK','9',12000) as {detail:string}[];expect(plan.some(p=>p.detail.includes('snapshot_matching'))).toBe(true);});
 
 test('ended discounts, unavailable products and vanished products leave the public deals',async()=>{
  const {env}=await database();const p=product(121);await runWithOffers(env,[p]);expect(await currentDeals(env)).toHaveLength(1);
@@ -116,4 +116,24 @@ test('unsubscribing while stock checks run suppresses the job before the provide
  const messages:any[]=[];fakeShop([p],messages);const mock=globalThis.fetch;let stop=true;
  globalThis.fetch=(async(input:unknown,init?:RequestInit)=>{if(init?.method==='HEAD'&&stop){stop=false;await handle(new Request(`https://shoe.test/unsubscribe-all?token=${person!.unsubscribe_token}`,{method:'POST'}),env,'');}return mock(input as any,init);}) as typeof fetch;
  expect((await dispatchDigests(env,run.id)).sent).toBe(0);expect(messages).toHaveLength(0);expect((await env.DB.prepare('SELECT status FROM digest_jobs').first<{status:string}>())!.status).toBe('suppressed');expect((await env.DB.prepare('SELECT count(*) n FROM recommendation_receipts').first<{n:number}>())!.n).toBe(0);
+});
+
+test('a fresh published catalogue from an earlier scan can supply the current digest',async()=>{
+ const {env}=await database(),p=product(171),earlier=await runWithOffers(env,[p]),current=await runWithOffers(env,[]);
+ await env.DB.prepare("UPDATE sources SET live_snapshot_id=? WHERE id='amphibian'").bind(`${earlier.id}:amphibian`).run();
+ await watch(env,'w','one@example.test');const messages:any[]=[];fakeShop([p],messages);
+ expect((await planDigests(env,current.id)).planned).toBe(1);
+ expect((await dispatchDigests(env,current.id)).sent).toBe(1);
+ expect(messages).toHaveLength(1);
+});
+
+test('a previous catalogue cannot supply stale offers or offers from a failed shop',async()=>{
+ const {env}=await database(),p=product(172),earlier=await runWithOffers(env,[p]),current=await runWithOffers(env,[]);
+ await env.DB.prepare("UPDATE sources SET live_snapshot_id=?,status='error' WHERE id='amphibian'").bind(`${earlier.id}:amphibian`).run();
+ await watch(env,'w','one@example.test');
+ expect((await planDigests(env,current.id)).planned).toBe(0);
+ await env.DB.prepare("UPDATE scan_runs SET planning_done=0,cursor_email='' WHERE id=?").bind(current.id).run();
+ await env.DB.prepare("UPDATE sources SET status='live' WHERE id='amphibian'").run();
+ await env.DB.prepare('UPDATE offer_snapshots SET checked_at=?').bind(new Date(Date.now()-31*3600000).toISOString()).run();
+ expect((await planDigests(env,current.id)).planned).toBe(0);
 });

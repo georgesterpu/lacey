@@ -40,7 +40,23 @@ the workflow result and `source_runs` rejection details; a checkpoint advancing
 does not prove the entire catalogue has finished. Publication happens only
 after the full crawl and the empty/shrink/rejection checks pass.
 
-The 120-minute job budget accommodates roughly 2,500 sale listings at the
-existing one-request-per-second pace. If it is exceeded, the cursor remains
-available for catalogue-only recovery; do not increase request frequency to
-force completion. Customer records are independent of these catalogue jobs.
+## Delivery isolation
+
+The workflow now has separate concurrency groups for its delivery and catalogue
+jobs. The short delivery job refreshes the smaller feeds, validates matches,
+dispatches the digest and saves an encrypted backup. It does not wait for 21RUN.
+The catalogue job runs independently after delivery, or directly in catalogue-only
+mode. A pending catalogue cannot block the next slot's delivery job.
+
+The catalogue worker checkpoints for at most 90 minutes, then exits successfully
+with an explicit continuation message if work remains. Its 100-minute platform
+budget leaves room to finish the current request. Actual validation errors still
+fail the worker. A later invocation resumes the active cursor across scan slots
+instead of throwing away its progress. Fresh published catalogues are eligible
+for later digests even when collected under an earlier scan ID; each offer still
+has to pass the freshness, source status and pre-send verification checks.
+
+Retailer response latency can make a full crawl much longer than its theoretical
+one-request-per-second minimum. An advancing cursor is not full coverage or a
+promise of two complete EU crawls per day. Customer records are independent of
+these catalogue jobs.

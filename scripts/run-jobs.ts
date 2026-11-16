@@ -89,35 +89,40 @@ for (let attempt = 0; !resumeRun && attempt < 3; attempt++) {
 if (!scan || !["complete", "partial"].includes(scan.status))
   throw new Error("No completed source scan; email dispatch withheld");
 
-// Invocation budgets bound requests, not catalogue coverage. Each call resumes
-// a persistent cursor; only a finished catalogue replaces the public snapshot.
-let catalogueDone = false,
-  catalogueFailed = false;
-for (let step = 0; step < 2000; step++) {
-  const result = await post<Catalogue>("/api/internal/catalogue", {
-    runId: scan.runId,
-  });
-  console.log(JSON.stringify({ stage: "catalogue", ...result }));
-  if (result.done) {
-    catalogueDone = true;
-    catalogueFailed = result.status === "failed";
-    break;
-  }
-  await Bun.sleep(
-    Math.min(
-      60000,
-      Math.max(
-        200,
-        result.retryAfterMs ?? (result.status === "busy" ? 5000 : 200),
-      ),
-    ),
-  );
-}
-if (!catalogueDone)
-  throw new Error("Catalogue time budget exhausted; checkpoint retained");
+// Catalogue workers never dispatch subscriber emails. Slow collection cannot
+// hold up the independent scan, delivery and backup job.
 if (process.env.CATALOGUE_ONLY === "true") {
+  // Invocation budgets bound requests, not catalogue coverage. Each call resumes
+  // a persistent cursor; only a finished catalogue replaces the public snapshot.
+  const deadline = Date.now() + 90 * 60000;
+  let catalogueDone = false,
+    catalogueFailed = false;
+  for (let step = 0; step < 2000 && Date.now() < deadline; step++) {
+    const result = await post<Catalogue>("/api/internal/catalogue", {
+      runId: scan.runId,
+    });
+    console.log(JSON.stringify({ stage: "catalogue", ...result }));
+    if (result.done) {
+      catalogueDone = true;
+      catalogueFailed = result.status === "failed";
+      break;
+    }
+    await Bun.sleep(
+      Math.min(
+        60000,
+        Math.max(
+          200,
+          result.retryAfterMs ?? (result.status === "busy" ? 5000 : 200),
+        ),
+      ),
+    );
+  }
   if (catalogueFailed) throw new Error("Catalogue failed; inspect shop checks");
-  console.log("Catalogue refresh complete; email delivery was not requested");
+  console.log(
+    catalogueDone
+      ? "Catalogue refresh complete; email delivery was not requested"
+      : "Catalogue checkpoint retained; collection will resume on the next worker run",
+  );
   process.exit(0);
 }
 
@@ -185,7 +190,7 @@ await writeFile(`.data/backups/lacey-${scan.runId}.enc`, bytes, {
   mode: 0o600,
 });
 console.log(JSON.stringify({ stage: "backed_up", bytes: bytes.byteLength }));
-if (scan.status === "partial" || catalogueFailed)
+if (scan.status === "partial")
   throw new Error(
     "A shop failed validation; healthy sources were processed. Inspect source checks.",
   );

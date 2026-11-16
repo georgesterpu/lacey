@@ -12,7 +12,7 @@ installed Node.js or Python runtime.
 | Production hosting | Vercel's native Bun preset, `bunVersion: "1.4.x"`, Dublin region. Vercel supplies the runtime patch version. |
 | Production database | Separate managed Turso/libSQL database; `@libsql/client` 0.18.0 over TLS. |
 | Local/test database | Bun's built-in `bun:sqlite`, with in-memory databases in tests. |
-| Scheduled work | GitHub Actions at 08:00/20:00 Europe/Dublin, with catch-up events. `bun run scan` executes `scripts/run-jobs.ts`. |
+| Scheduled work | GitHub Actions at 08:00/20:00 Europe/Dublin, with catch-up events and independent delivery/catalogue jobs. `bun run scan` executes `scripts/run-jobs.ts`. |
 | Email | Resend's HTTP API, with no email SDK. |
 | Browser QA | `Bun.WebView` driving an installed Chromium executable. No Playwright library is required by the repository. |
 

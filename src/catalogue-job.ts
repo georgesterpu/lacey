@@ -1,6 +1,7 @@
 import type { Env } from './types';
 import { twentyOneStep, RetryableRequestError, type CrawlCursor } from './twentyone';
 import { offerStatements } from './snapshots';
+import { scheduleSlot } from './schedule';
 
 // A persistent cursor replaces arbitrary product limits and long HTTP requests.
 // A failed invocation leaves the last checkpoint intact. Only a finished crawl
@@ -10,6 +11,18 @@ export async function advanceCatalogue(env: Env, runId: string) {
     .bind(runId)
     .first();
   if (!run) throw new Error('Unknown scan');
+  // A new email slot must not discard an unfinished catalogue. Reuse its scan
+  // namespace until publication; delivery reads fresh, published snapshots.
+  const active = await env.DB.prepare(
+    "SELECT key FROM app_state WHERE key LIKE 'crawl:%:21run' AND json_extract(value,'$.createdAt')>? ORDER BY json_extract(value,'$.createdAt') LIMIT 1",
+  ).bind(new Date(Date.now() - 24 * 3600000).toISOString()).first<{ key: string }>();
+  if (active) runId = active.key.split(':')[1];
+  else {
+    const source = await env.DB.prepare("SELECT last_success FROM sources WHERE id='21run'")
+      .first<{ last_success: string | null }>();
+    if (source?.last_success && scheduleSlot(new Date(source.last_success)) === scheduleSlot())
+      return { done: true, status: 'complete', skipped: true };
+  }
   const now = new Date().toISOString(),
     key = `crawl:${runId}:21run`,
     retryKey = `${key}:retry`,
