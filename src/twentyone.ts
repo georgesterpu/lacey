@@ -2,6 +2,9 @@ import type { Offer } from './types';
 const origin = 'https://21run.com',
   ua = 'Lacey/0.4 (+https://lacey.january.ie; twice-daily shoe-price checks)';
 const requestIntervalMs = 1000;
+// A bad product can be withheld; a network failure must not drop that product.
+export class ProductValidationError extends Error {}
+export class RetryableRequestError extends Error {}
 const decode = (s: string) =>
   s.replace(/&(?:amp|quot|apos|lt|gt|#\d+|#x[\da-f]+);/gi, (x) =>
     x.startsWith('&#')
@@ -98,11 +101,16 @@ async function request(url: string, policy?: string) {
       throw new Error('21RUN robots.txt disallows this request');
     await Bun.sleep(Math.max(0, nextRequest - Date.now()));
     nextRequest = Date.now() + requestIntervalMs;
-    const response = await fetch(link, {
+    let response: Response;
+    try {
+      response = await fetch(link, {
       headers: { 'User-Agent': ua, Accept: 'text/html,application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(15000),
-    });
+      });
+    } catch {
+      throw new RetryableRequestError('21RUN request timed out or failed to connect');
+    }
     if ([401, 403, 406, 429].includes(response.status)) {
       blockedUntil = Date.now() + 12 * 3600000;
       await response.body?.cancel();
@@ -112,9 +120,15 @@ async function request(url: string, policy?: string) {
     }
     if (!response.ok) {
       await response.body?.cancel();
+      if (response.status >= 500)
+        throw new RetryableRequestError(`21RUN HTTP ${response.status}`);
       throw new Error(`21RUN HTTP ${response.status}`);
     }
-    return response.text();
+    try {
+      return await response.text();
+    } catch {
+      throw new RetryableRequestError('21RUN response body was interrupted');
+    }
   });
   queue = work.catch(() => {});
   return work;
@@ -160,6 +174,19 @@ function cents(n: unknown) {
   return Math.round(n * 100);
 }
 export function twentyOneOffers(
+  url: string,
+  sku: string,
+  data: unknown,
+  parent: unknown,
+  now: string,
+): Offer[] {
+  try {
+    return parseOffers(url, sku, data, parent, now);
+  } catch (error) {
+    throw new ProductValidationError((error as Error).message);
+  }
+}
+function parseOffers(
   url: string,
   sku: string,
   data: unknown,
@@ -369,6 +396,8 @@ export interface CrawlCursor {
   pages: number;
   products: number;
   held: number;
+  rejected?: number;
+  issues?: { sku: string; url: string; reason: string }[];
   createdAt: string;
 }
 export function twentyOnePage(html: string, pageUrl: string) {
@@ -436,14 +465,25 @@ export async function twentyOneStep(cursor: CrawlCursor | null, now: string) {
     try {
       rows = await loadProduct(item.url, item.sku, now, policy);
     } catch (e) {
-      if (!/^21RUN HTTP (404|410)$/.test((e as Error).message)) throw e;
+      if (e instanceof ProductValidationError) {
+        state.rejected = (state.rejected ?? 0) + 1;
+        state.issues ??= [];
+        if (state.issues.length < 10)
+          state.issues.push({ ...item, reason: e.message.slice(0, 200) });
+      } else if (!/^21RUN HTTP (404|410)$/.test((e as Error).message)) throw e;
       rows = [];
     }
     offers.push(...rows);
     state.products++;
     if (!rows.length) state.held++;
     state.queue.shift();
+    // Isolate occasional bad listings, but do not hide a broken parser or feed.
+    if ((state.rejected ?? 0) > Math.max(3, state.products * 0.05))
+      throw new Error('21RUN over 5% of products failed validation; snapshot withheld');
   }
+  if (!state.pageUrl && !state.queue.length &&
+      (state.rejected ?? 0) > state.products * 0.05)
+    throw new Error('21RUN over 5% of products failed validation; snapshot withheld');
   return { offers, cursor: state, done: !state.pageUrl && !state.queue.length };
 }
 

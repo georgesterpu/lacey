@@ -12,6 +12,10 @@ on:
         description: Refresh catalogue without sending emails
         type: boolean
         default: false
+      resume_run_id:
+        description: 'Catalogue-only recovery: resume an existing scan ID (optional)'
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -20,7 +24,9 @@ concurrency:
 jobs:
   refresh-and-deliver:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # The EU sale catalogue has around 2,500 products. Keep the polite 1 req/s
+    # pace and allow time for all pages plus bounded retries.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Collect, validate, match, deliver and verify
@@ -28,6 +34,7 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           CATALOGUE_ONLY: ${{ inputs.catalogue_only }}
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
         run: node scripts/run-jobs.mjs
       - name: Retain encrypted customer-data backup
         if: always()

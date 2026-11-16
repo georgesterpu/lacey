@@ -5,9 +5,21 @@ const base=process.env.APP_URL;
 const secret=process.env.CRON_SECRET;
 if(!base||!secret)throw new Error('APP_URL and CRON_SECRET must be configured');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function post(path,body){const response=await fetch(new URL(path,base),{method:'POST',headers:{Authorization:`Bearer ${secret}`,'Content-Type':'application/json'},body:JSON.stringify(body??{}),signal:AbortSignal.timeout(240000)});if(!response.ok)throw new Error(`${path}: HTTP ${response.status}`);return response.json();}
-let scan;
-for(let attempt=0;attempt<3;attempt++){
+async function post(path,body){
+ for(let attempt=1;attempt<=3;attempt++){
+  let response;
+  try{response=await fetch(new URL(path,base),{method:'POST',headers:{Authorization:`Bearer ${secret}`,'Content-Type':'application/json'},body:JSON.stringify(body??{}),signal:AbortSignal.timeout(240000)});}
+  catch{if(attempt===3)throw new Error(`${path}: connection failed after 3 attempts`);}
+  if(response?.ok)return response.json();
+  if(response){await response.body?.cancel();if(response.status<500||attempt===3)throw new Error(`${path}: HTTP ${response.status}`);}
+  console.warn(`${path}: temporary request failure; retry ${attempt}/2`);
+  await sleep(attempt*5000);
+ }
+}
+const resumeRun=process.env.RESUME_RUN_ID;
+if(resumeRun&&(process.env.CATALOGUE_ONLY!=='true'||!/^[a-f0-9-]{36}$/.test(resumeRun)))throw new Error('An existing scan can only be resumed in catalogue-only mode with a valid scan ID');
+let scan=resumeRun?{runId:resumeRun,status:'complete'}:undefined;
+for(let attempt=0;!resumeRun&&attempt<3;attempt++){
  try{scan=await post('/api/internal/scan');console.log(JSON.stringify({stage:'scan',runId:scan.runId,status:scan.status,reports:scan.reports}));if(['complete','partial'].includes(scan.status))break;}catch(error){console.error(error.message);if(attempt===2)throw error;}
  await sleep((attempt+1)*15000);
 }
@@ -19,7 +31,7 @@ for(let step=0;step<2000;step++){
  const result=await post('/api/internal/catalogue',{runId:scan.runId});
  console.log(JSON.stringify({stage:'catalogue',...result}));
  if(result.done){catalogueDone=true;catalogueFailed=result.status==='failed';break;}
- await sleep(result.status==='busy'?5000:200);
+ await sleep(Math.min(60000,Math.max(200,result.retryAfterMs??(result.status==='busy'?5000:200))));
 }
 if(!catalogueDone)throw new Error('Catalogue time budget exhausted; checkpoint retained');
 if(process.env.CATALOGUE_ONLY==='true'){

@@ -1,5 +1,5 @@
 import type { Env } from './types';
-import { twentyOneStep, type CrawlCursor } from './twentyone';
+import { twentyOneStep, RetryableRequestError, type CrawlCursor } from './twentyone';
 import { offerStatements } from './snapshots';
 
 // A persistent cursor replaces arbitrary product limits and long HTTP requests.
@@ -12,6 +12,7 @@ export async function advanceCatalogue(env: Env, runId: string) {
   if (!run) throw new Error('Unknown scan');
   const now = new Date().toISOString(),
     key = `crawl:${runId}:21run`,
+    retryKey = `${key}:retry`,
     lease = crypto.randomUUID();
   await env.DB.prepare(
     "INSERT INTO source_runs(run_id,source_id,status) VALUES(?,'21run','pending') ON CONFLICT DO NOTHING",
@@ -35,8 +36,19 @@ export async function advanceCatalogue(env: Env, runId: string) {
       .run();
   }
   if (job?.status === 'complete') return { done: true, status: 'complete' };
-  if (job?.status === 'failed')
-    return { done: true, status: 'failed', error: job.details };
+  if (job?.status === 'failed') {
+    const savedRetry = await env.DB.prepare('SELECT value FROM app_state WHERE key=?')
+      .bind(retryKey).first<{ value: string }>();
+    const retry = savedRetry ? JSON.parse(savedRetry.value) as { attempts: number; after: number } : null;
+    // Recover checkpoints stranded by the old all-or-nothing product validator.
+    // Other permanent failures (including retailer blocks) require investigation.
+    if ((!retry && job.details !== '21RUN product identity mismatch') || (retry && retry.attempts >= 3))
+      return { done: true, status: 'failed', error: job.details };
+    if (retry && retry.after > Date.now())
+      return { done: false, status: 'retrying', retryAfterMs: retry.after - Date.now(), error: job.details };
+    await env.DB.prepare("UPDATE source_runs SET status='pending' WHERE run_id=? AND source_id='21run' AND status='failed'")
+      .bind(runId).run();
+  }
   await env.DB.prepare(
     `UPDATE source_runs SET status='collecting',details=?,completed_at=? WHERE run_id=? AND source_id='21run'
   AND (status='pending' OR (status='collecting' AND completed_at<?))`,
@@ -68,15 +80,17 @@ export async function advanceCatalogue(env: Env, runId: string) {
       saved ? (JSON.parse(saved.value) as CrawlCursor) : null,
       now,
     );
-    const progress = `${result.cursor.pages} pages · ${result.cursor.products} products checked`;
+    const rejected = result.cursor.rejected ?? 0;
+    const progress = `${result.cursor.pages} pages · ${result.cursor.products} products checked · ${rejected} quarantined`;
     await env.DB.batch([
       ...offerStatements(env, runId, result.offers, `${runId}:21run:full`),
       env.DB.prepare(
         'INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
       ).bind(key, JSON.stringify(result.cursor)),
       env.DB.prepare(
-        "UPDATE source_runs SET status='pending',details=?,completed_at=NULL WHERE run_id=? AND source_id='21run'",
-      ).bind(progress, runId),
+        "UPDATE source_runs SET status='pending',details=?,rejected=?,completed_at=NULL WHERE run_id=? AND source_id='21run'",
+      ).bind(progress, rejected, runId),
+      env.DB.prepare('DELETE FROM app_state WHERE key=?').bind(retryKey),
       env.DB.prepare(
         "UPDATE sources SET last_attempt=?,error=? WHERE id='21run'",
       ).bind(now, `Updating catalogue: ${progress}`),
@@ -105,11 +119,13 @@ export async function advanceCatalogue(env: Env, runId: string) {
           AND COALESCE((SELECT price FROM price_history h WHERE h.offer_id=s.id ORDER BY observed_at DESC LIMIT 1),-1)!=s.price
           ON CONFLICT(offer_id,observed_at) DO NOTHING`).bind(snapshot),
         env.DB.prepare(
-          "UPDATE sources SET live_snapshot_id=?,status='live',product_count=?,last_success=?,error=NULL WHERE id='21run'",
-        ).bind(snapshot, totals.products, now),
+          "UPDATE sources SET live_snapshot_id=?,status=?,product_count=?,last_success=?,error=? WHERE id='21run'",
+        ).bind(snapshot, rejected ? 'partial' : 'live', totals.products, now,
+          rejected ? `${rejected} conflicting products withheld; remaining catalogue verified` : null),
         env.DB.prepare(
           "UPDATE source_runs SET status='complete',products=?,variants=?,details=?,completed_at=? WHERE run_id=? AND source_id='21run'",
-        ).bind(totals.products, totals.variants, progress, now, runId),
+        ).bind(totals.products, totals.variants,
+          `${progress}${rejected ? `; examples: ${JSON.stringify(result.cursor.issues)}` : ''}`, now, runId),
         env.DB.prepare('DELETE FROM app_state WHERE key=?').bind(key),
       ]);
     }
@@ -119,10 +135,21 @@ export async function advanceCatalogue(env: Env, runId: string) {
       pages: result.cursor.pages,
       checked: result.cursor.products,
       variants: result.offers.length,
+      rejected,
     };
   } catch (error) {
     const message = (error as Error).message.slice(0, 350);
+    let retry: { attempts: number; after: number; createdAt: string } | undefined;
+    if (error instanceof RetryableRequestError) {
+      const saved = await env.DB.prepare('SELECT value FROM app_state WHERE key=?')
+        .bind(retryKey).first<{ value: string }>();
+      const attempts = (saved ? Number(JSON.parse(saved.value).attempts) : 0) + 1;
+      retry = { attempts, after: Date.now() + attempts * 15000, createdAt: now };
+    }
     await env.DB.batch([
+      ...(retry ? [env.DB.prepare('INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+        .bind(retryKey, JSON.stringify(retry))] :
+        [env.DB.prepare('DELETE FROM app_state WHERE key=?').bind(retryKey)]),
       env.DB.prepare(
         "UPDATE source_runs SET status='failed',details=?,completed_at=? WHERE run_id=? AND source_id='21run'",
       ).bind(message, now, runId),
@@ -130,6 +157,8 @@ export async function advanceCatalogue(env: Env, runId: string) {
         "UPDATE sources SET status='error',error=?,last_attempt=? WHERE id='21run'",
       ).bind(message, now),
     ]);
-    return { done: true, status: 'failed', error: message };
+    return retry && retry.attempts < 3
+      ? { done: false, status: 'retrying', retryAfterMs: retry.after - Date.now(), error: message }
+      : { done: true, status: 'failed', error: message };
   }
 }
