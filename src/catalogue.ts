@@ -45,17 +45,22 @@ export async function currentDeals(
       ).all<CatalogueSource>()
     ).results
   ).filter((source) => ["live", "partial"].includes(source.status));
+  if (!sources.length) return [];
   const cutoff = freshCutoff();
-  const groups = await Promise.all(
-    sources.map((source) =>
-      env.DB.prepare(
-        packed(source.live_snapshot_id ? snapshotDealsSql : legacyDealsSql),
-      )
-        .bind(source.live_snapshot_id ?? source.id, cutoff, limit)
-        .first<{ offers: string }>()
-        .then((row) => JSON.parse(row?.offers ?? "[]") as Offer[]),
-    ),
-  );
+  const sql = sources
+    .map((source) =>
+      packed(source.live_snapshot_id ? snapshotDealsSql : legacyDealsSql),
+    )
+    .join(" UNION ALL ");
+  const parameters = sources.flatMap((source) => [
+    source.live_snapshot_id ?? source.id,
+    cutoff,
+    limit,
+  ]);
+  const result = await env.DB.prepare(sql)
+    .bind(...parameters)
+    .all<{ offers: string }>();
+  const groups = result.results.map((row) => JSON.parse(row.offers) as Offer[]);
   const rows = groups
     .flat()
     .sort((a, b) => b.checked_at.localeCompare(a.checked_at));
