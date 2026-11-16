@@ -98,6 +98,7 @@ test("retailer URLs reject other countries, account/API routes and arbitrary que
   const wh =
     "https://www.runningwarehouse.eu/adidas_adizero_Adios_Pro_4/descpage-A4AAPMR-EN.html";
   expect(warehouseLink(wh)).toBe(wh);
+  expect(warehouseLink(wh + "?vat=IE")).toBe(wh);
   expect(() => warehouseLink(wh + "?vat=DE")).toThrow();
 });
 test("catalogue pagination follows the next page and cannot change country or repeat page numbers", () => {
@@ -171,6 +172,7 @@ test("Warehouse Ireland prices remain explicit, 3+ means stock, and delivery est
     now,
   );
   expect(rows.some((r) => r.available)).toBe(true);
+  expect(rows.every((r) => !new URL(r.url).search)).toBe(true);
   expect(() =>
     warehouseOffers(
       html.replace('value="IE" selected', 'value="DE" selected'),

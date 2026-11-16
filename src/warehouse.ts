@@ -25,6 +25,7 @@ export function warehouseOffers(
   url: string,
   now: string,
 ): Offer[] {
+  const customerLink = warehouseLink(url);
   if (!/value="IE"[^>]*selected/.test(html) || !/Prices include VAT/.test(html))
     throw new Error("Ireland VAT selection not confirmed");
   const identity =
@@ -86,7 +87,7 @@ export function warehouseOffers(
       reference_price: reference,
       currency: "EUR",
       image,
-      url: new URL(url).toString(),
+      url: customerLink,
       available: available ? 1 : 0,
       checked_at: now,
     });

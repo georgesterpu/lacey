@@ -3,7 +3,7 @@ import { ProductValidationError, type CrawlCursor } from "./twentyone";
 import { retailerPage } from "./retailer-http";
 import { sportsListing, sportsOffers } from "./sportsdirect";
 import { misterListing, misterOffers } from "./misterrunning";
-import { warehouseListing, warehouseOffers } from "./warehouse";
+import { warehouseListing, warehouseOffers, warehouseLink } from "./warehouse";
 export const pagedRetailers = {
   sportsdirect: {
     seeds: ["https://ie.sportsdirect.com/sale/running/shoes"],
@@ -48,6 +48,12 @@ export async function retailerStep(
           createdAt: now,
         },
     offers: Offer[] = [];
+  // Checkpoints from the former country-query connector must use the same
+  // clean URL as newly discovered products. Ireland is selected by POST.
+  if (id === "warehouse") {
+    state.queue = state.queue.map((item) => ({ ...item, url: warehouseLink(item.url) }));
+    state.seen = [...new Set(state.seen.map(warehouseLink))];
+  }
   if (!state.queue.length && state.pageUrl) {
     if (state.seenPages?.includes(state.pageUrl))
       throw new Error("Retailer pagination repeated a page; snapshot withheld");
