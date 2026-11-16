@@ -25,6 +25,11 @@ export const snapshotDealsSql = `SELECT ${columns},o.run_id FROM offer_snapshots
   WHERE o.snapshot_id=? AND ${eligible("o.run_id")} ORDER BY checked_at DESC LIMIT ?`;
 const legacyDealsSql = `SELECT ${columns},NULL AS run_id FROM offers o
   WHERE o.source_id=? AND ${eligible("NULL")} ORDER BY checked_at DESC LIMIT ?`;
+// libSQL's typed row protocol repeats metadata for every field of every size.
+// Return one JSON value per shop instead, avoiding thousands of driver row
+// wrappers on the function's CPU while preserving every verified size fact.
+const packed = (sql: string) =>
+  `SELECT json_group_array(json_object(${[...fields.split(","), "run_id"].map((name) => `'${name}',o.${name}`).join(",")})) AS offers FROM (${sql}) o`;
 // Seek only each shop's published snapshot by its primary key. The old UNION
 // view scanned staged/historical variants too and stalled the entire dashboard.
 export async function currentDeals(
@@ -44,14 +49,15 @@ export async function currentDeals(
   const groups = await Promise.all(
     sources.map((source) =>
       env.DB.prepare(
-        source.live_snapshot_id ? snapshotDealsSql : legacyDealsSql,
+        packed(source.live_snapshot_id ? snapshotDealsSql : legacyDealsSql),
       )
         .bind(source.live_snapshot_id ?? source.id, cutoff, limit)
-        .all<Offer>(),
+        .first<{ offers: string }>()
+        .then((row) => JSON.parse(row?.offers ?? "[]") as Offer[]),
     ),
   );
   const rows = groups
-    .flatMap((group) => group.results)
+    .flat()
     .sort((a, b) => b.checked_at.localeCompare(a.checked_at));
   return limit < 0 ? rows : rows.slice(0, limit);
 }
