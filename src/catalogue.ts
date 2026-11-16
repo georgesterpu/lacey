@@ -1,17 +1,45 @@
-import type { Env, Offer } from './types';
-import { freshCutoff } from './types';
-// Retain catalogue/price data separately from the public deals. An ended sale,
-// unavailable variant, stale observation, failed source, or known dead link is
-// never a public offer just because its row still exists in retained history.
-export async function currentDeals(env:Env,limit=-1) {
- return (await env.DB.prepare(`SELECT o.* FROM current_offers o JOIN sources s ON s.id=o.source_id
-  WHERE o.available=1 AND o.checked_at>=? AND o.reference_price>o.price
-  AND o.price*100<=o.reference_price*80 AND s.status IN('live','partial')
-  AND NOT EXISTS(SELECT 1 FROM product_checks p WHERE p.run_id=o.run_id
+import type { Env, Offer } from "./types";
+import { freshCutoff } from "./types";
+const fields =
+  "id,source_id,product_id,title,brand,category,fit,size_system,size,colour,price,reference_price,currency,image,url,available,checked_at";
+const columns = fields
+  .split(",")
+  .map((name) => `o.${name}`)
+  .join(",");
+const eligible = (
+  runId: string,
+) => `o.available=1 AND o.checked_at>=? AND o.reference_price>o.price
+  AND o.price*100<=o.reference_price*80
+  AND NOT EXISTS(SELECT 1 FROM product_checks p WHERE p.run_id=${runId}
     AND p.source_id=o.source_id AND p.product_id=o.product_id AND p.checked_at>=o.checked_at
     AND (p.status!='ok' OR NOT EXISTS(SELECT 1 FROM json_each(p.payload) v
       WHERE json_extract(v.value,'$.id')=o.id AND json_extract(v.value,'$.available')=1
       AND json_extract(v.value,'$.price')=o.price
-      AND json_extract(v.value,'$.reference_price')=o.reference_price)))
-  ORDER BY o.checked_at DESC LIMIT ?`).bind(freshCutoff(),limit).all<Offer>()).results;
+      AND json_extract(v.value,'$.reference_price')=o.reference_price)))`;
+export const snapshotDealsSql = `SELECT ${columns},o.run_id FROM offer_snapshots o
+  WHERE o.snapshot_id=? AND ${eligible("o.run_id")} ORDER BY checked_at DESC LIMIT ?`;
+const legacyDealsSql = `SELECT ${columns},NULL AS run_id FROM offers o
+  WHERE o.source_id=? AND ${eligible("NULL")} ORDER BY checked_at DESC LIMIT ?`;
+// Seek only each shop's published snapshot by its primary key. The old UNION
+// view scanned staged/historical variants too and stalled the entire dashboard.
+export async function currentDeals(env: Env, limit = -1) {
+  const sources = (
+    await env.DB.prepare(
+      "SELECT id,live_snapshot_id FROM sources WHERE status IN('live','partial')",
+    ).all<{ id: string; live_snapshot_id: string | null }>()
+  ).results;
+  const cutoff = freshCutoff();
+  const groups = await Promise.all(
+    sources.map((source) =>
+      env.DB.prepare(
+        source.live_snapshot_id ? snapshotDealsSql : legacyDealsSql,
+      )
+        .bind(source.live_snapshot_id ?? source.id, cutoff, limit)
+        .all<Offer>(),
+    ),
+  );
+  const rows = groups
+    .flatMap((group) => group.results)
+    .sort((a, b) => b.checked_at.localeCompare(a.checked_at));
+  return limit < 0 ? rows : rows.slice(0, limit);
 }

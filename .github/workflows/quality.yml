@@ -2,8 +2,8 @@ name: Parser and delivery checks
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'scripts/**', 'server.ts', 'vercel.json', 'tests/**', 'fixtures/**', 'drizzle/**', 'public/**', 'package.json', 'bun.lock', '.github/workflows/quality.yml']
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -20,3 +20,15 @@ jobs:
       - run: bun test
       - run: bun run build
       - run: bun run build:vercel
+      - name: Browser guard with live and unpublished catalogue rows
+        env:
+          BUN_CHROME_PATH: /usr/bin/google-chrome
+        run: bun run smoke:ci
+      - name: Retain browser failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-${{ github.run_id }}
+          path: screenshots/smoke-*.png
+          retention-days: 7
+          if-no-files-found: warn

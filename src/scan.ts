@@ -29,7 +29,7 @@ export async function scan(env:Env) {
     if(complete&&(prior?.product_count??0)>=50&&count<prior!.product_count*.5)throw new Error('Catalogue shrank by over 50%; snapshot quarantined for review');
     const snapshot=`${runId}:${source.id}`;
     await env.DB.prepare('DELETE FROM offer_snapshots WHERE snapshot_id=?').bind(snapshot).run();
-    for(let start=0;start<offers.length;start+=60){await env.DB.batch(offerStatements(env,runId,offers.slice(start,start+60)));await env.DB.prepare('UPDATE scan_runs SET heartbeat_at=? WHERE id=?').bind(new Date().toISOString(),runId).run();}
+    for(let start=0;start<offers.length;start+=500){await env.DB.batch(offerStatements(env,runId,offers.slice(start,start+500)));await env.DB.prepare('UPDATE scan_runs SET heartbeat_at=? WHERE id=?').bind(new Date().toISOString(),runId).run();}
     // Publish the entire source in one atomic transaction. Failed/incomplete writes
     // never change the live pointer, so readers keep the previous good snapshot.
     await env.DB.batch([

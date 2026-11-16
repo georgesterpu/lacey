@@ -16,7 +16,7 @@ interface Dispatch {
   delivery: { status: string; remaining: number; sent: number };
 }
 interface Health {
-  run?: { id: string };
+  run?: { id: string; status?: string };
   stale: boolean;
   checks: unknown;
   delivery: unknown;
@@ -66,7 +66,21 @@ if (
 let scan: Scan | undefined = resumeRun
   ? { runId: resumeRun, status: "complete" }
   : undefined;
-for (let attempt = 0; !resumeRun && attempt < 3; attempt++) {
+const catalogueOnly = process.env.CATALOGUE_ONLY === "true";
+if (catalogueOnly && !scan) {
+  // A catalogue worker needs a durable namespace, not a new source scan. The
+  // latter can be running independently and must never be started/retried here.
+  const response = await fetch(new URL("/api/health", base), {
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok)
+    throw new Error("Cannot read the existing scan for catalogue collection");
+  const health = (await response.json()) as Health;
+  if (!health.run?.id)
+    throw new Error("Run a source scan before starting catalogue collection");
+  scan = { runId: health.run.id, status: health.run.status ?? "running" };
+}
+for (let attempt = 0; !catalogueOnly && attempt < 3; attempt++) {
   try {
     scan = await post<Scan>("/api/internal/scan");
     console.log(
@@ -86,12 +100,12 @@ for (let attempt = 0; !resumeRun && attempt < 3; attempt++) {
   }
   await Bun.sleep((attempt + 1) * 15000);
 }
-if (!scan || !["complete", "partial"].includes(scan.status))
+if (!scan || (!catalogueOnly && !["complete", "partial"].includes(scan.status)))
   throw new Error("No completed source scan; email dispatch withheld");
 
 // Catalogue workers never dispatch subscriber emails. Slow collection cannot
 // hold up the independent scan, delivery and backup job.
-if (process.env.CATALOGUE_ONLY === "true") {
+if (catalogueOnly) {
   // Invocation budgets bound requests, not catalogue coverage. Each call resumes
   // a persistent cursor; only a finished catalogue replaces the public snapshot.
   const deadline = Date.now() + 90 * 60000;

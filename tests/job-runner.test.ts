@@ -139,3 +139,13 @@ test("the Bun runner completes the scheduled pipeline and writes a private backu
     mode: 0o600,
   });
 });
+
+test('catalogue-only collection reuses a running scan without launching or waiting for a new source scan', async () => {
+  const result = await run(path => {
+    if(path === '/api/health') return Response.json({run:{id:runId,status:'running'}});
+    if(path === '/api/internal/catalogue') return Response.json({done:true,status:'complete'});
+    throw new Error('Catalogue workers must not start scans or send emails');
+  }, 'true', '');
+  expect(result.code).toBe(0);
+  expect(result.paths).toEqual(['/api/health','/api/internal/catalogue']);
+});

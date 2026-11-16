@@ -1,0 +1,26 @@
+name: Production shoe-loading check
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22 8,20 * * *'
+      timezone: Europe/Dublin
+permissions:
+  contents: read
+concurrency:
+  group: lacey-production-smoke
+  cancel-in-progress: false
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Verify production shoes, images and filters in mobile and desktop browsers
+        env:
+          APP_URL: https://lacey.january.ie
+          BUN_CHROME_PATH: /usr/bin/google-chrome
+        run: bun run smoke
