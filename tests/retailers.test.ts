@@ -91,6 +91,10 @@ test("Sports Direct decodes server JSON without scripts and preserves colour, si
 test("retailer URLs reject other countries, account/API routes and arbitrary queries", () => {
   expect(() => sportsLink(sd.replace("ie.", "www."))).toThrow();
   expect(() => sportsLink(sd + "?sizecode=123")).toThrow();
+  // Real colour names can contain unescaped slashes in the public product slug.
+  const slash = "https://ie.sportsdirect.com/salomon-shoes-ultra-flow-2-gtx-black/black/patin-trail-running-mens-213073#colcode=21307303";
+  expect(sportsLink(slash)).toBe(slash);
+  expect(() => sportsLink("https://ie.sportsdirect.com/api/product-123456")).toThrow();
   expect(() =>
     sportsLink("https://ie.sportsdirect.com/api/products"),
   ).toThrow();
@@ -163,6 +167,8 @@ test("Sports Direct discovers rendered products beyond the truncated SEO sample"
       "https://ie.sportsdirect.com/sale/running/shoes?dcp=19",
     ),
   ).toEqual({ products: [sd, second], next: null });
+  const finalPage = html.replace('aria-disabled="true"', 'class="UxrGwa_paginationItem UxrGwa_disabled" tabindex="-1"').replace('href="/sale/running/shoes">Next', 'href="/sale/running/shoes?dcp=20">Next');
+  expect(sportsListing(finalPage, "https://ie.sportsdirect.com/sale/running/shoes?dcp=19").next).toBeNull();
 });
 test("Warehouse Ireland prices remain explicit, 3+ means stock, and delivery estimates do not mean in stock", async () => {
   const html = await Bun.file("fixtures/warehouse-product.html").text();

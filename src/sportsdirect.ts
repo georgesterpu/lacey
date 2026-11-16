@@ -5,7 +5,8 @@ export function sportsLink(value: string) {
   const u = new URL(value, origin);
   if (
     u.origin !== origin ||
-    !/^\/[a-z0-9-]+-\d{6}$/.test(u.pathname) ||
+    !/^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*-\d{6}$/.test(u.pathname) ||
+    /^\/(?:api|account|checkout|cart)(?:\/|$)/.test(u.pathname) ||
     u.search ||
     (u.hash && !/^#colcode=\d{8}$/.test(u.hash))
   )
@@ -225,7 +226,8 @@ export function sportsListing(html: string, url: string) {
       (m) =>
         /aria-label="Go To Next Page"/.test(m[0]) &&
         /href=/.test(m[0]) &&
-        !/aria-disabled="true"/.test(m[0]),
+        !/aria-disabled="true"/.test(m[0]) &&
+        !(/class="[^"]*\b[\w-]*disabled\b/.test(m[0]) && /tabindex="-1"/.test(m[0])),
     )?.[0],
     href = tag?.match(/href="([^"]+)"/)?.[1],
     next = href ? new URL(href.replaceAll("&amp;", "&"), url) : null,
