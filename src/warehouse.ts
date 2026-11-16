@@ -103,12 +103,12 @@ export function warehouseLink(url: string) {
     (link.search && !/^\?vat=IE$/.test(link.search))
   )
     throw new Error("Unapproved Warehouse link");
-  link.search = "?vat=IE";
+  link.search = "";
   return link.href;
 }
 export async function warehouseProduct(url: string, now: string) {
   const link = warehouseLink(url);
-  return warehouseOffers(await retailerPage(link), link, now);
+  return warehouseOffers(await retailerPage(link,{irelandVAT:true}), link, now);
 }
 export function warehouseListing(html: string) {
   const products = [

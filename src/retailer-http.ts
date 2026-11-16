@@ -14,7 +14,7 @@ export class RetailerRequestError extends Error {
     super(message);
   }
 }
-async function document(url: URL): Promise<string> {
+async function document(url: URL, irelandVAT = false): Promise<string> {
   const at = Math.max(Date.now(), (slots.get(url.origin) ?? 0) + 1000);
   slots.set(url.origin, at);
   if (at > Date.now()) await Bun.sleep(at - Date.now());
@@ -44,6 +44,7 @@ async function document(url: URL): Promise<string> {
         "10000000",
         "--write-out",
         "\n%{http_code}",
+        ...(irelandVAT ? ["--data", "vat=IE"] : []),
         url.href,
       ],
       { stdout: "pipe", stderr: "pipe" },
@@ -82,7 +83,10 @@ async function document(url: URL): Promise<string> {
     );
   return text;
 }
-export async function retailerPage(value: string) {
+export async function retailerPage(
+  value: string,
+  { irelandVAT = false }: { irelandVAT?: boolean } = {},
+) {
   const url = new URL(value);
   if (
     !origins.has(url.origin) ||
@@ -92,6 +96,8 @@ export async function retailerPage(value: string) {
     url.pathname.includes("..")
   )
     throw new Error("Unapproved retailer URL");
+  if (irelandVAT && url.hostname !== "www.runningwarehouse.eu")
+    throw new Error("VAT preference is only supported by Warehouse");
   if (url.pathname === "/robots.txt") return document(url);
   let policy = policies.get(url.origin);
   if (!policy || policy.until < Date.now()) {
@@ -105,5 +111,5 @@ export async function retailerPage(value: string) {
     throw new RetailerRequestError(
       "Retailer robots rules do not allow this page",
     );
-  return document(url);
+  return document(url, irelandVAT);
 }

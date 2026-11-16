@@ -20,6 +20,7 @@ const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,
 import {groupOffers} from './offer-groups';
 export {groupOffers} from './offer-groups';
 import {readPublicCatalogue} from './public-catalogue';
+import{jsonStream}from './json-stream';
 async function body(request:Request) { if(Number(request.headers.get('Content-Length'))>12000)throw new Error('Request too large');const text=await request.text();if(text.length>12000)throw new Error('Request too large');return JSON.parse(text) as Record<string,unknown>; }
 export async function handle(request:Request,env:Env,clientCode:string):Promise<Response> {
  const identity=await device(request);
@@ -110,7 +111,7 @@ async function route(request:Request,env:Env,clientCode:string,user:string):Prom
   if(method!=='GET' && request.headers.get('Origin') && request.headers.get('Origin')!==url.origin)return json({error:'Origin mismatch'},403);
   if(path==='/api/watchlist'&&method==='GET')return json(await dashboardState(env,user));
   if(path==='/api/catalogue'&&method==='GET'){
-   const response=json({...await readPublicCatalogue(env),emailReady:emailReady(env),nextCheck:nextCheck()});
+   const response=jsonStream({...await readPublicCatalogue(env),emailReady:emailReady(env),nextCheck:nextCheck()});
    response.headers.set('Vercel-CDN-Cache-Control','public, s-maxage=60, stale-while-revalidate=300');
    return response;
   }

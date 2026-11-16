@@ -17,7 +17,8 @@ pointer; interrupted results remain unpublished.
   manufacturer-labelled unit mappings. A disabled final-page Next anchor ends
   pagination; an active backwards link remains an error.
 - **Warehouse:** every discovered product in the men's and women's sale pages,
-  using the catalogue's actual URLs. Each product explicitly selects `vat=IE`;
+  using the catalogue's actual URLs. Each product uses the shop's country
+  preference form (`POST vat=IE`), with a clean customer link;
   the parser requires selected Ireland, VAT-inclusive EUR and labelled UK size
   rows. Numeric stock including `3+` is available; lead times such as `15 Days`
   are excluded. No manufactured descpage URLs or fixed first-24-product cap.

@@ -12,6 +12,12 @@ Vercel may cache it for 60 seconds and serve the previous response while refresh
 for up to five minutes. The browser also removes offers beyond the 30-hour
 freshness boundary. Check timestamps describe the observation, not the page visit.
 
+The catalogue JSON is streamed in bounded chunks so adding shops cannot hit
+Vercel's 4.5 MB buffered-response ceiling. It retains the same JSON contract and
+shared CDN policy; large synthetic responses are checked for completeness and
+UTF-8 correctness. A much larger catalogue should move to paged browsing before
+approaching the CDN's streaming cache limit. See [Vercel response limits](https://vercel.com/kb/guide/how-to-bypass-vercel-body-size-limit-serverless-functions).
+
 `/api/watchlist` is private, scoped to the HttpOnly device cookie and never shared
 in the CDN. Shoes render before that request or legacy email repair finishes.
 Internal background endpoints use a separate database connection, so a long

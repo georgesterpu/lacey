@@ -1,7 +1,7 @@
 import type { Offer } from "./types";
 import { retailerPage } from "./retailer-http";
 const decode = (s: string) =>
-  s.replace(/&(?:amp|apos|quot|lt|gt|euro|#39|#\d+);/g, (x) =>
+  s.replace(/&(?:amp|apos|quot|lt|gt|euro|nbsp|#39|#\d+);/g, (x) =>
     x.startsWith("&#")
       ? String.fromCodePoint(Number(x.slice(2, -1)))
       : ({
@@ -12,6 +12,7 @@ const decode = (s: string) =>
           "&lt;": "<",
           "&gt;": ">",
           "&euro;": "€",
+          "&nbsp;": " ",
         }[x] ?? x),
   );
 const text = (s: string) =>
@@ -188,12 +189,20 @@ export function misterListing(html: string, url: string) {
     )?.[0],
     next = tag ? new URL(attr(tag, "href"), url) : null,
     current = new URL(url);
+  const pager = text(
+    html.match(/<ul class="pagination[^>]*>([\s\S]*?)<\/ul>/)?.[1] ?? "",
+  ).match(/(\d+)\s+(?:di|of)\s+(\d+)/i);
+  const finalPage =
+    !!pager &&
+    pager[1] === pager[2] &&
+    Number(pager[1]) === Number(current.searchParams.get("p") ?? 1);
   if (next)
     for (const key of [...next.searchParams.keys()])
       if (/^(?:utm_|_gl$|gclid$|fbclid$|msclkid$)/i.test(key))
         next.searchParams.delete(key);
   if (
     next &&
+    !finalPage &&
     (next.origin !== current.origin ||
       next.pathname !== current.pathname ||
       !/^\?p=[1-9]\d*$/.test(next.search) ||
@@ -203,7 +212,7 @@ export function misterListing(html: string, url: string) {
     throw new Error("MisterRunning pagination did not advance");
   return {
     products: [...products],
-    next: next?.href ?? null,
+    next: finalPage ? null : (next?.href ?? null),
     fingerprint: [...observed].sort().join("\n"),
   };
 }

@@ -24,6 +24,13 @@ test('the same checkpoint engine imports a second shop without duplicating a pro
   const summary=await env.DB.prepare("SELECT value FROM app_state WHERE key='source-summary:misterrunning'").first<{value:string}>();expect(JSON.parse(summary!.value).variants).toBe(11);
  },url=>url.includes('misterrunning.com')?new Response(url.endsWith('/robots.txt')?'User-agent: *\nAllow: /':url===product?html:`<a href="${product}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a>`):null);
 },10000);
+test('an ended product redirect is withheld without blocking the remaining shop catalogue',async()=>{
+ const product='https://www.misterrunning.com/en/mizuno-wave-sky-9-mens-running-shoes-cloudscape-blue-jewel-j1gc2502-61.html',retired=product.replace('j1gc2502-61','retired-model'),html=await Bun.file('fixtures/misterrunning-product.html').text();
+ await scenario(async(env,run)=>{
+  await advanceCatalogue(env,run,'misterrunning');expect((await advanceCatalogue(env,run,'misterrunning')).status).toBe('complete');
+  expect((await env.DB.prepare("SELECT product_count FROM sources WHERE id='misterrunning'").first<{product_count:number}>())?.product_count).toBe(1);
+ },url=>url.includes('misterrunning.com')?url===retired?new Response('',{status:301}):new Response(url.endsWith('/robots.txt')?'User-agent: *\nAllow: /':url===product?html:[retired,product].map(u=>`<a href="${u}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a>`).join('')):null);
+},10000);
 
 const base='https://21run.com/eu/sale/running-shoes';
 async function scenario(work:(env:Env,run:string,db:Database)=>Promise<void>,response?:(url:string)=>Response|null){

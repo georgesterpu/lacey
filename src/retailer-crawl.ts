@@ -59,7 +59,11 @@ export async function retailerStep(
         new URL(state.pageUrl).pathname +
         ":" +
         new Bun.CryptoHasher("sha256")
-        .update('fingerprint' in page?String(page.fingerprint):[...page.products].sort().join("\n"))
+          .update(
+            "fingerprint" in page
+              ? String(page.fingerprint)
+              : [...page.products].sort().join("\n"),
+          )
           .digest("hex");
     if (state.fingerprints?.includes(fingerprint))
       throw new Error(
@@ -79,9 +83,13 @@ export async function retailerStep(
     const item = state.queue[0];
     let html: string;
     try {
-      html = await retailerPage(item.url);
+      html = await retailerPage(item.url, { irelandVAT: id === "warehouse" });
     } catch (error) {
-      if (!/^Retailer HTTP (404|410)$/.test((error as Error).message))
+      if (
+        !/^Retailer HTTP (301|302|303|307|308|404|410)$/.test(
+          (error as Error).message,
+        )
+      )
         throw error;
       state.held++;
       state.products++;
