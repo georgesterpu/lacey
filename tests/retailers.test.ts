@@ -10,9 +10,16 @@ const now = "2026-11-16T22:00:00Z",
   mr =
     "https://www.misterrunning.com/en/mizuno-wave-sky-9-mens-running-shoes-cloudscape-blue-jewel-j1gc2502-61.html",
   sd = "https://ie.sportsdirect.com/nike-structure-26-trainers-womens-211073";
-test('Sports Direct single-colour JSON-LD and unseparated Flight text records preserve oversold stock as unavailable',async()=>{
- const h=await Bun.file('fixtures/sportsdirect-single-product.html').text(),rows=sportsOffers(h,'https://ie.sportsdirect.com/nike-juniper-trail-2-gtx-mens-trail-running-shoes-213000',now);
- expect(rows).toHaveLength(5);expect(rows.filter(r=>r.available)).toHaveLength(3);expect(rows.find(r=>r.size==='8')?.available).toBe(0);
+test("Sports Direct single-colour JSON-LD and unseparated Flight text records preserve oversold stock as unavailable", async () => {
+  const h = await Bun.file("fixtures/sportsdirect-single-product.html").text(),
+    rows = sportsOffers(
+      h,
+      "https://ie.sportsdirect.com/nike-juniper-trail-2-gtx-mens-trail-running-shoes-213000",
+      now,
+    );
+  expect(rows).toHaveLength(5);
+  expect(rows.filter((r) => r.available)).toHaveLength(3);
+  expect(rows.find((r) => r.size === "8")?.available).toBe(0);
 });
 test("MisterRunning uses the recorded UK size, stock and first-listed price, including adjacent HTML attributes", async () => {
   const html = await Bun.file("fixtures/misterrunning-product.html").text(),
@@ -107,6 +114,16 @@ test("catalogue pagination follows the next page and cannot change country or re
   ).toEqual([
     "https://www.runningwarehouse.eu/Shoe/descpage-ABC-EN.html?vat=IE",
   ]);
+});
+test("Sports Direct discovers rendered products beyond the truncated SEO sample", () => {
+  const second = sd.replace("211073", "999999"),
+    html = `<script type="application/ld+json">${JSON.stringify({ "@type": "ItemList", itemListElement: [{ item: { name: "Running shoe", url: sd + "#colcode=21107341" } }] })}</script><a href="${sd}#colcode=21107341">First</a><a href="${second}#colcode=99999901">Beyond SEO sample</a><a aria-label="Go To Next Page" aria-disabled="true" href="/sale/running/shoes">Next</a>`;
+  expect(
+    sportsListing(
+      html,
+      "https://ie.sportsdirect.com/sale/running/shoes?dcp=19",
+    ),
+  ).toEqual({ products: [sd, second], next: null });
 });
 test("Warehouse Ireland prices remain explicit, 3+ means stock, and delivery estimates do not mean in stock", async () => {
   const html = await Bun.file("fixtures/warehouse-product.html").text();

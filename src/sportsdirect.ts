@@ -202,19 +202,30 @@ export function sportsListing(html: string, url: string) {
     !listing.itemListElement.length
   )
     throw new Error("Sports Direct listing contract missing");
+  const listed = [...html.matchAll(/href="([^"?]+-\d{6}#colcode=\d{8})"/g)].map(
+    (m) => new URL(m[1], origin).href,
+  );
+  // SEO JSON-LD contains only ten examples; the rendered catalogue has more.
+  // Read every product-card link, with JSON-LD as a contract/fallback check.
+  const discovered = listed.length
+    ? listed
+    : listing.itemListElement.map((v: any) => v.item.url);
   const products = [
     ...new Set<string>(
-      listing.itemListElement
-        .filter((v: any) => !/spikes|sandals|slides/i.test(v.item?.name ?? ""))
-        .map((v: any) => {
-          const u = new URL(sportsLink(v.item.url));
+      discovered
+        .filter((value: string) => !/spikes|sandals|slides/i.test(value))
+        .map((value: string) => {
+          const u = new URL(sportsLink(value));
           u.hash = "";
           return u.href;
         }),
     ),
   ];
   const tag = [...html.matchAll(/<a\b[^>]*>/g)].find(
-      (m) => /aria-label="Go To Next Page"/.test(m[0]) && /href=/.test(m[0]),
+      (m) =>
+        /aria-label="Go To Next Page"/.test(m[0]) &&
+        /href=/.test(m[0]) &&
+        !/aria-disabled="true"/.test(m[0]),
     )?.[0],
     href = tag?.match(/href="([^"]+)"/)?.[1],
     next = href ? new URL(href.replaceAll("&amp;", "&"), url) : null,
