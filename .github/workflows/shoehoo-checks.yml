@@ -53,7 +53,8 @@ jobs:
           if-no-files-found: warn
   catalogue:
     needs: refresh-and-deliver
-    if: ${{ always() && (inputs.catalogue_only || needs.refresh-and-deliver.result == 'success') }}
+    # A failed small feed or delivery must not prevent unrelated shop recovery.
+    if: ${{ !cancelled() }}
     concurrency:
       group: lacey-catalogue-${{ matrix.source }}
       cancel-in-progress: false

@@ -36,10 +36,14 @@ export async function advanceCatalogue(
   )
     throw new Error("Unknown scan");
   const blocked = await env.DB.prepare(
-    "SELECT error,last_attempt FROM sources WHERE id=?",
+    "SELECT error,last_attempt,last_success FROM sources WHERE id=?",
   )
     .bind(sourceId)
-    .first<{ error: string | null; last_attempt: string | null }>();
+    .first<{
+      error: string | null;
+      last_attempt: string | null;
+      last_success: string | null;
+    }>();
   const resumeAt = blocked?.last_attempt
     ? Date.parse(blocked.last_attempt) + 12 * 3600000
     : 0;
@@ -55,19 +59,19 @@ export async function advanceCatalogue(
   )
     .bind(
       `crawl:%:${sourceId}`,
-      new Date(Date.now() - 24 * 3600000).toISOString(),
+      new Date(
+        Math.max(
+          Date.now() - 24 * 3600000,
+          Date.parse(blocked?.last_success ?? "") || 0,
+        ),
+      ).toISOString(),
     )
     .first<{ key: string }>();
   if (active) runId = active.key.split(":")[1];
   else {
-    const previous = await env.DB.prepare(
-      "SELECT last_success FROM sources WHERE id=?",
-    )
-      .bind(sourceId)
-      .first<{ last_success: string | null }>();
     if (
-      previous?.last_success &&
-      scheduleSlot(new Date(previous.last_success)) === scheduleSlot()
+      blocked?.last_success &&
+      scheduleSlot(new Date(blocked.last_success)) === scheduleSlot()
     )
       return { done: true, status: "complete", skipped: true };
   }

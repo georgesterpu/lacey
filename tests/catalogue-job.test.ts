@@ -148,3 +148,15 @@ test('a new email slot resumes the existing catalogue instead of starting again'
   expect(await advanceCatalogue(env,later)).toMatchObject({done:true,status:'complete',skipped:true});
  });
 },10000);
+
+test('a completed newer catalogue supersedes an older interrupted cursor',async()=>{
+ let requests=0;
+ await scenario(async(env,run)=>{
+  await checkpoint(env,run);
+  const success=new Date().toISOString(),snapshot='newer-published-snapshot';
+  await env.DB.prepare("UPDATE sources SET last_success=?,live_snapshot_id=?,status='live' WHERE id='21run'").bind(success,snapshot).run();
+  expect(await advanceCatalogue(env,run)).toMatchObject({done:true,status:'complete',skipped:true});
+  expect(requests).toBe(0);
+  expect((await env.DB.prepare("SELECT live_snapshot_id FROM sources WHERE id='21run'").first<{live_snapshot_id:string}>())?.live_snapshot_id).toBe(snapshot);
+ },()=>{requests++;return null;});
+});

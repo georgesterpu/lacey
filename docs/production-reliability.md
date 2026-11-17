@@ -35,8 +35,10 @@ Shopify collection follows pagination to the end instead of stopping at 500
 products. Repeated pages, contract errors, excessive duration and a 10,000-product
 collection safety ceiling fail the source without replacing its published data.
 A larger shop reaching a safety ceiling requires a persistent paged connector,
-not a larger unbounded request. 21RUN already uses a persistent crawl cursor;
-its collected rows stay unpublished until its crawl and validation finish.
+not a larger unbounded request. 21RUN, MisterRunning, Warehouse and Sports Direct
+use persistent crawl cursors; their collected rows stay unpublished until the
+crawl and validation finish. A newer successful publication supersedes older
+interrupted cursors, so an obsolete crawl cannot overwrite fresher inventory.
 
 Inventory summaries count distinct normalized shoe listings, all size variants,
 listings with at least one available size, and listings entirely sold out. They
@@ -62,18 +64,22 @@ apply independently of caching.
 
 ## Honest coverage
 
-A working website does not imply eight working retailers. MR, Running Warehouse
-and Sports Direct remain disconnected where verification or customer links are
-blocked. Life Style Sports is explicitly limited. 21RUN's advancing checkpoint
-is not a completed catalogue. Never relabel these as complete to make a dashboard
-look healthy. Inspect `sources`, `source_runs`, the cursor and live snapshot
-counts together when auditing coverage.
+A working website does not imply eight working retailers. See the
+[dated import audit](retailer-audit-2026-11-17.md): 21RUN and MisterRunning have
+published completed catalogues; Warehouse and Sports Direct remain blocked
+during full collection. Life Style Sports is explicitly limited. Never relabel
+an advancing checkpoint as a completed catalogue to make a dashboard look healthy.
+Inspect `sources`, `source_runs`, the cursor and live snapshot counts together.
+The small-feed scan aggregates only its own reports. An independent catalogue
+failure cannot poison that scan or prevent other catalogue workers from running;
+each failed shop retains its real failure status.
 
 ## Release and operations
 
 Use `bun run release`; see [release-guard.md](release-guard.md). It requires CI
 on the exact commit, tests the staged production API and actual client assets in
-mobile/desktop browsers, promotes that same build, and checks the public domain.
+mobile/desktop browsers, including every published shop's filter and image host,
+promotes that same build, and checks the public domain.
 It rolls back if the public post-check fails. The browser fixture includes large
 unpublished data, empty results, broken JavaScript, stalled requests and stalled
 email repair. Tests also cover pagination, sold-out replacement, and keeping

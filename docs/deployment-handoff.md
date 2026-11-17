@@ -36,7 +36,7 @@ Production/preview Secrets are not exported by Vercel env pull. The privately st
 
 ## Backups and restoration
 
-Turso provides provider-managed point-in-time recovery, subject to the selected plan’s retention. This is supplemented by an independent **encrypted member-data backup after every scheduled run**, retained as an encrypted artifact in the private GitHub job repository for 14 days. The protected `/api/internal/backup` endpoint reads the selected tables in a single read transaction, compresses the result, and encrypts it with AES-256-GCM and a random nonce. The GitHub runner receives ciphertext only; the decryption key stays in Vercel and the private operations copy. `/api/health` exposes `lastBackup`, without member data.
+Provider-managed recovery depends on the selected database plan. Lacey also keeps an independent **encrypted member-data backup after every scheduled run**, retained as an encrypted artifact in the private GitHub job repository for 14 days. The protected `/api/internal/backup` endpoint reads the selected tables in a single read transaction, compresses the result, and encrypts it with AES-256-GCM and a random nonce. The GitHub runner receives ciphertext only; the decryption key stays in Vercel and the private operations copy. `/api/health` exposes `lastBackup`, without member data.
 
 The snapshot includes watches, emails, consent, verification/unsubscribe tokens, feedback, suppression status, sent-shoe receipts, job/run records, delivery counters, source configuration, application state and schema checksums. Recollectable catalogues, link-check payloads and price history are excluded. Durable recommendation receipts are included so recovery cannot restart old shoe alerts.
 

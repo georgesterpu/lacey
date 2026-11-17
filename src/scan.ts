@@ -4,8 +4,7 @@ import { collect, sources } from './sources';
 import { scheduleSlot } from './schedule';
 import {offerStatements,inventorySummary} from './snapshots';
 import {publicSourceStatement,publicFailureStatement,publicStateStatement,saleOffers} from './public-catalogue';
-const connectionNotes:Record<string,string>={warehouse:'Paused: customer product links and verification returned HTTP 406. Not publishing offers until browser access is reliable.',misterrunning:'Catalogue accessible; product verification returned HTTP 403. Requires an approved size/stock feed.', sportsdirect:'Not connected; needs a verified price/size connector for ie.sportsdirect.com.'};
-export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter,error) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter,error=CASE WHEN excluded.adapter=\'planned\' THEN excluded.error ELSE sources.error END').bind(s.id,s.name,s.url,s.adapter,connectionNotes[s.id]??null)));}
+export async function initializeSources(env:Env) {await env.DB.batch(sources.map(s=>env.DB.prepare('INSERT INTO sources(id,name,url,adapter) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,adapter=excluded.adapter').bind(s.id,s.name,s.url,s.adapter)));}
 export async function scan(env:Env) {
  await initializeSources(env);const now=new Date().toISOString(),slot=scheduleSlot(),id=crypto.randomUUID();
  // Retries reuse the same run and snapshot namespace; only a stale lease or an
@@ -48,7 +47,9 @@ export async function scan(env:Env) {
     reports.push({source:source.name,status:partial?'partial':'complete',products:count,variants:offers.length,rejected,held});
    }catch(e){const message=(e as Error).message.slice(0,350);await env.DB.batch([publicFailureStatement(env,source.id,message,now),env.DB.prepare("UPDATE sources SET status='error',error=? WHERE id=?").bind(message,source.id),env.DB.prepare("INSERT INTO source_runs(run_id,source_id,status,details,completed_at) VALUES(?,?,'failed',?,?) ON CONFLICT(run_id,source_id) DO UPDATE SET status='failed',details=excluded.details,completed_at=excluded.completed_at").bind(runId,source.id,message,new Date().toISOString())]);reports.push({source:source.name,status:'failed',error:message});}
   }
-  const counts=await env.DB.prepare("SELECT sum(CASE WHEN status IN('complete','partial') THEN 1 ELSE 0 END) good,sum(CASE WHEN status='failed' THEN 1 ELSE 0 END) bad FROM source_runs WHERE run_id=?").bind(runId).first<{good:number;bad:number}>();
+  // Paged collectors share this run namespace but have independent jobs. Their
+  // failures must not turn a successful small-feed refresh into a failed job.
+  const counts={good:reports.filter(r=>['complete','partial'].includes(r.status)).length,bad:reports.filter(r=>r.status==='failed').length};
   const status=!counts?.good?'failed':counts.bad?'partial':'complete',finished=new Date().toISOString();
   await env.DB.prepare('UPDATE scan_runs SET status=?,completed_at=?,heartbeat_at=?,errors_json=? WHERE id=?').bind(status,finished,finished,JSON.stringify(reports.filter(r=>r.status==='failed')),runId).run();
   if(counts?.good)await env.DB.prepare("INSERT INTO app_state(key,value) VALUES('last_scan',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(finished).run();

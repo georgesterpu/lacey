@@ -192,8 +192,18 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
       ),
       "No shoe image loaded",
     );
+    // A working image from one shop must not hide a broken new image host or
+    // an individual-shop filter that silently drops another published feed.
+    for (const source of data.sources.filter((s) => s.current_deals > 0)) {
+      await view.evaluate(`(()=>{const b=document.querySelector('#filter-brand'),s=document.querySelector('#filter-region');b.value='any';s.value=${JSON.stringify(`shop:${source.id}`)};s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+      assert.ok(await view.evaluate('document.querySelectorAll(".product-card").length>0'), `No cards for ${source.id} at ${width}px`);
+      const until = Date.now() + 5000;
+      while (Date.now() < until && !(await view.evaluate('[...document.querySelectorAll(".product-card img")].some(i=>i.complete&&i.naturalWidth>0)')))
+        await Bun.sleep(100);
+      assert.ok(await view.evaluate('[...document.querySelectorAll(".product-card img")].some(i=>i.complete&&i.naturalWidth>0)'), `No ${source.id} shoe image loaded at ${width}px`);
+    }
     console.log(
-      `Browser ${width}px: shoes, images and filters loaded in ${Math.round(performance.now() - rendered)}ms`,
+      `Browser ${width}px: shoes, images and individual-shop filters loaded in ${Math.round(performance.now() - rendered)}ms`,
     );
   }
 }
