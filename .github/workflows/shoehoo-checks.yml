@@ -16,6 +16,11 @@ on:
         description: Refresh small shops and deliver without starting paged catalogues
         type: boolean
         default: false
+      catalogue_source:
+        description: Paged source to refresh (all for normal operation)
+        type: choice
+        options: [all, 21run, misterrunning, warehouse, sportsdirect]
+        default: all
       resume_run_id:
         description: 'Catalogue-only recovery: resume an existing scan ID (optional)'
         type: string
@@ -65,7 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source: [21run, warehouse, misterrunning, sportsdirect]
+        source: ${{ fromJSON(inputs.catalogue_source && inputs.catalogue_source != 'all' && format('["{0}"]', inputs.catalogue_source) || '["21run","warehouse","misterrunning","sportsdirect"]') }}
     runs-on: ubuntu-latest
     # The worker stops after 90 minutes with its cursor intact. It cannot delay
     # the next slot's independent delivery job or bypass retailer rate limits.
