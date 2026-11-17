@@ -10,7 +10,7 @@ export async function reserveDelivery(env: Env) {
   );
   const day = new Date().toISOString().slice(0, 10);
   return !!(await env.DB.prepare(
-    'INSERT INTO delivery_budget(day,reserved) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET reserved=reserved+1 WHERE reserved<? RETURNING reserved',
+    'INSERT INTO delivery_budget(day,reserved) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET reserved=delivery_budget.reserved+1 WHERE delivery_budget.reserved<? RETURNING reserved',
   )
     .bind(day, limit)
     .first());

@@ -6,7 +6,8 @@ import { currentDeals } from "../src/catalogue";
 import { dashboardState } from "../src/dashboard-state";
 import { handle } from "../src/server";
 import { publicProductStatement } from "../src/public-catalogue";
-import { planDigests } from "../src/outbox";
+import { planDigests, dispatchDigests } from "../src/outbox";
+import { reserveDelivery } from "../src/email";
 import { snapshot } from "../src/backup";
 import { cleanup } from "../src/retention";
 import { digest } from "../src/identity";
@@ -136,6 +137,15 @@ try {
     (await prepareDelivery(env, run.id)).checked > 0,
     "The email server can consume fresh worker verification from Postgres",
   );
+  // Exercise the real delivery SQL against Postgres, with only the provider
+  // mocked. Planning and preflight alone do not test quota reservation.
+  env.DAILY_EMAIL_LIMIT = "2";
+  assert.equal((await dispatchDigests(env, run.id)).sent, 1);
+  assert.equal(messages.length, 2, "One confirmation and one digest expected");
+  assert.equal((await dispatchDigests(env, run.id)).sent, 0);
+  assert.equal(messages.length, 2, "Replaying delivery must not send twice");
+  assert.equal(await reserveDelivery(env), true, "The second quota slot is available");
+  assert.equal(await reserveDelivery(env), false, "The global daily quota is enforced");
   await env.DB.batch([
     publicProductStatement(env, "amphibian", "0", []),
     env.DB.prepare(
