@@ -199,10 +199,18 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
     for (const source of data.sources.filter((s) => s.current_deals > 0)) {
       await view.evaluate(`(()=>{const b=document.querySelector('#filter-brand'),s=document.querySelector('#filter-region');b.value='any';s.value=${JSON.stringify(`shop:${source.id}`)};s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
       assert.ok(await view.evaluate('document.querySelectorAll(".product-card").length>0'), `No cards for ${source.id} at ${width}px`);
+      // Exercise a visible card: Chrome may defer offscreen lazy images after
+      // replacing a long list. A filter change alone need not request them.
+      await view.evaluate('document.querySelector(".product-card img")?.scrollIntoView({block:"center"})');
       const until = Date.now() + 5000;
       while (Date.now() < until && !(await view.evaluate('[...document.querySelectorAll(".product-card img")].some(i=>i.complete&&i.naturalWidth>0)')))
         await Bun.sleep(100);
-      assert.ok(await view.evaluate('[...document.querySelectorAll(".product-card img")].some(i=>i.complete&&i.naturalWidth>0)'), `No ${source.id} shoe image loaded at ${width}px`);
+      const imageLoaded=await view.evaluate('[...document.querySelectorAll(".product-card img")].some(i=>i.complete&&i.naturalWidth>0)');
+      if(!imageLoaded){
+        console.error('Shoe image failure',{source:source.id,width,images:await view.evaluate('[...document.querySelectorAll(".product-card img")].slice(0,3).map(i=>({src:i.currentSrc,complete:i.complete,width:i.naturalWidth,top:i.getBoundingClientRect().top}))')});
+        await Bun.write(`screenshots/smoke-${width}.png`,await view.screenshot());
+      }
+      assert.ok(imageLoaded, `No ${source.id} shoe image loaded at ${width}px`);
       if(data.offers.filter(o=>o.source_id===source.id).every(o=>o.size_system==='unknown')){
         await view.evaluate(`(()=>{const f=document.querySelector('#filter-size');f.value='9';f.dispatchEvent(new Event('change',{bubbles:true}));})()`);
         assert.ok(await view.evaluate('!!document.querySelector("#products [data-action=all-sizes]")'), 'Unconfirmed size units need a clear recovery path');

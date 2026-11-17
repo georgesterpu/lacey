@@ -122,7 +122,7 @@ if (catalogueOnly) {
     });
     console.log(JSON.stringify({ stage: "catalogue", ...result }));
     if(result.status==='paused'){
-      console.log('Retailer cooldown active; no import performed and no email requested. The shop status retains its blocking reason.');
+      console.log('Retailer is paused; no import performed and no email requested. The shop status retains its blocking reason.');
       process.exit(0);
     }
     if (result.done) {

@@ -9,10 +9,10 @@ import { releaseUnsentRecommendations, reserveRecommendation } from './recommend
 interface Candidate {watchId:string;watchIds?:string[];offerId:string;price:number;}
 interface Job {id:string;run_id:string;email_hash:string;status:string;candidates:string;payload:string|null;attempts:number;created_at:string;error:string|null;}
 export async function planDigests(env:Env,runId:string,limit=20){
- const run=await env.DB.prepare('SELECT status,started_at,cursor_email,planning_done FROM scan_runs WHERE id=?').bind(runId).first<{status:string;started_at:string;cursor_email:string;planning_done:number}>();
+ const run=await env.DB.prepare('SELECT status,started_at,completed_at,cursor_email,planning_done FROM scan_runs WHERE id=?').bind(runId).first<{status:string;started_at:string;completed_at:string|null;cursor_email:string;planning_done:number}>();
  if(!run||!['complete','partial'].includes(run.status))return {planned:0,done:false,error:'A successful source scan is required'};
  if(run.planning_done)return {planned:0,done:true};
- if(Date.now()-Date.parse(run.started_at)>6*3600000)return {planned:0,done:true,error:'Scan is too old for email planning'};
+ if(Date.now()-Date.parse(run.completed_at??run.started_at)>6*3600000)return {planned:0,done:true,error:'Scan is too old for email planning'};
  const recipients=(await env.DB.prepare('SELECT email FROM watches WHERE active=1 AND email_verified=1 AND email>? GROUP BY email ORDER BY email LIMIT ?').bind(run.cursor_email,limit).all<{email:string}>()).results;
  let planned=0;
  for(const {email} of recipients){
@@ -45,8 +45,8 @@ export async function planDigests(env:Env,runId:string,limit=20){
 export async function dispatchDigests(env:Env,runId?:string,limit=1){
  if(!emailReady(env))return {sent:0,status:'not_configured',remaining:0};
  if(!runId)return {sent:0,status:'run_required',remaining:0};
- const run=await env.DB.prepare('SELECT started_at,status FROM scan_runs WHERE id=?').bind(runId).first<{started_at:string;status:string}>();
- if(!run||!['complete','partial'].includes(run.status)||Date.now()-Date.parse(run.started_at)>6*3600000)return {sent:0,status:'scan_expired',remaining:0};
+ const run=await env.DB.prepare('SELECT started_at,completed_at,status FROM scan_runs WHERE id=?').bind(runId).first<{started_at:string;completed_at:string|null;status:string}>();
+ if(!run||!['complete','partial'].includes(run.status)||Date.now()-Date.parse(run.completed_at??run.started_at)>6*3600000)return {sent:0,status:'scan_expired',remaining:0};
  const now=new Date().toISOString();
  await env.DB.prepare("UPDATE digest_jobs SET status='queued',lease_until=NULL WHERE run_id=? AND status='sending' AND lease_until<?").bind(runId,now).run();
  const jobs=(await env.DB.prepare("SELECT * FROM digest_jobs WHERE run_id=? AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?) ORDER BY created_at,id LIMIT ?").bind(runId,now,limit).all<Job>()).results;

@@ -85,7 +85,9 @@ async function document(url: URL, irelandVAT = false): Promise<string> {
     try {
       const r = await fetch(url, {
         redirect: "manual",
-        headers: { "User-Agent": "Lacey/0.4 (+https://lacey.january.ie)" },
+        headers: { "User-Agent": "Lacey/0.4 (+https://lacey.january.ie)",
+          // Category pagination must not reuse a stale cached page-one body.
+          ...(url.hostname==='www.misterrunning.com'&&url.pathname.endsWith('-running-shoes/')?{'Cache-Control':'no-cache'}:{}) },
         signal: AbortSignal.timeout(20000),
       });
       status = r.status;

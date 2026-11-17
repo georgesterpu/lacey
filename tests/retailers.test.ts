@@ -158,6 +158,13 @@ test("MisterRunning finishes only when its explicit current/total pager confirms
     ),
   ).toThrow("advance");
 });
+test('MisterRunning strips advertising tags but rejects stale cached pages with a bounded retryable error',()=>{
+ const product=`<a href="${mr}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a>`;
+ const pager='<ul class="pagination centered"><li><span class="current">2</span> di 32</li></ul>';
+ const next='<a rel="next" href="https://www.misterrunning.com/en/mens-running-shoes/?p=3&amp;_ga=ads&amp;gad_source=1&amp;gclsrc=ads">Next</a>';
+ expect(misterListing(product+pager+next,'https://www.misterrunning.com/en/mens-running-shoes/?p=2').next).toBe('https://www.misterrunning.com/en/mens-running-shoes/?p=3');
+ try{misterListing(product+pager.replace('current">2','current">1')+next,'https://www.misterrunning.com/en/mens-running-shoes/?p=2');throw Error('Expected stale-page error');}catch(error){expect(error).toMatchObject({retryable:true});}
+});
 test("Sports Direct discovers rendered products beyond the truncated SEO sample", () => {
   const second = sd.replace("211073", "999999"),
     html = `<script type="application/ld+json">${JSON.stringify({ "@type": "ItemList", itemListElement: [{ item: { name: "Running shoe", url: sd + "#colcode=21107341" } }] })}</script><a href="${sd}#colcode=21107341">First</a><a href="${second}#colcode=99999901">Beyond SEO sample</a><a aria-label="Go To Next Page" aria-disabled="true" href="/sale/running/shoes">Next</a>`;

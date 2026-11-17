@@ -10,8 +10,12 @@ export async function scan(env:Env) {
  // Retries reuse the same run and snapshot namespace; only a stale lease or an
  // explicit failed run can be retried, and at most three attempts are admitted.
  await env.DB.prepare("INSERT INTO scan_runs(id,slot_key,status,started_at,heartbeat_at) VALUES(?,?,'running',?,?) ON CONFLICT(slot_key) DO NOTHING").bind(id,slot,now,now).run();
- let run=await env.DB.prepare('SELECT id,status,attempts,heartbeat_at FROM scan_runs WHERE slot_key=?').bind(slot).first<{id:string;status:string;attempts:number;heartbeat_at:string}>();
+ let run=await env.DB.prepare('SELECT id,status,attempts,heartbeat_at,completed_at FROM scan_runs WHERE slot_key=?').bind(slot).first<{id:string;status:string;attempts:number;heartbeat_at:string;completed_at:string|null}>();
+ const refresh=run!.id!==id&&run!.status==='complete'&&(!run!.completed_at||run!.completed_at<new Date(Date.now()-6*3600000).toISOString());
  if(run!.id!==id){
+  // A delayed cron may arrive hours after a manual/catch-up scan in this slot.
+  // Recollect the feeds before delivery; retain the slot identity and receipts.
+  if(refresh&&run!.attempts<3){await env.DB.prepare("UPDATE scan_runs SET status='partial' WHERE id=? AND status='complete'").bind(run!.id).run();run!.status='partial';}
   if(run!.status==='complete'&&run!.attempts<3){const done=(await env.DB.prepare('SELECT source_id FROM source_runs WHERE run_id=?').bind(run!.id).all<{source_id:string}>()).results;const added=sources.some(s=>!['planned','twentyone','catalogue'].includes(s.adapter)&&!done.some(d=>d.source_id===s.id));if(added){await env.DB.prepare("UPDATE scan_runs SET status='partial' WHERE id=? AND status='complete'").bind(run!.id).run();run!.status='partial';}}
   const leaseExpired=run!.heartbeat_at<new Date(Date.now()-10*60000).toISOString();
   if(run!.attempts>=3||!((['failed','partial'].includes(run!.status))||(run!.status==='running'&&leaseExpired))){return {runId:run!.id,status:run!.status,skipped:true};}
@@ -21,7 +25,12 @@ export async function scan(env:Env) {
  const runId=run!.id,reports=[];
  try{
   for(const source of sources.filter(s=>!['planned','twentyone','catalogue'].includes(s.adapter))){
-   const already=await env.DB.prepare('SELECT status FROM source_runs WHERE run_id=? AND source_id=?').bind(runId,source.id).first<{status:string}>();if(already&&['complete','partial'].includes(already.status)){reports.push({source:source.name,status:already.status});continue;}
+   const pause=await env.DB.prepare('SELECT value FROM app_state WHERE key=?').bind(`ops:source-pause:${source.id}`).first<{value:string}>();
+   if(pause){
+    await env.DB.prepare("INSERT INTO source_runs(run_id,source_id,status,details,completed_at) VALUES(?,?,'paused',?,?) ON CONFLICT DO NOTHING").bind(runId,source.id,pause.value,now).run();
+    reports.push({source:source.name,status:'paused',error:pause.value});continue;
+   }
+   const already=await env.DB.prepare('SELECT status FROM source_runs WHERE run_id=? AND source_id=?').bind(runId,source.id).first<{status:string}>();if(!refresh&&already&&['complete','partial'].includes(already.status)){reports.push({source:source.name,status:already.status});continue;}
    await env.DB.prepare('UPDATE sources SET last_attempt=? WHERE id=?').bind(now,source.id).run();
    try{
     const {offers,complete,rejected,held}=await collect(source,now);if(!offers.length)throw new Error('No usable variants; previous snapshot kept');

@@ -1,5 +1,5 @@
 import type { Offer } from "./types";
-import { retailerPage } from "./retailer-http";
+import { retailerPage, RetailerRequestError } from "./retailer-http";
 const decode = (s: string) =>
   s.replace(/&(?:amp|apos|quot|lt|gt|euro|nbsp|#39|#\d+);/g, (x) =>
     x.startsWith("&#")
@@ -196,9 +196,11 @@ export function misterListing(html: string, url: string) {
     !!pager &&
     pager[1] === pager[2] &&
     Number(pager[1]) === Number(current.searchParams.get("p") ?? 1);
+  if(pager&&Number(pager[1])!==Number(current.searchParams.get('p')??1))
+    throw new RetailerRequestError(`MisterRunning returned page ${pager[1]} instead of ${current.searchParams.get('p')??1}`,true);
   if (next)
     for (const key of [...next.searchParams.keys()])
-      if (/^(?:utm_|_gl$|gclid$|fbclid$|msclkid$)/i.test(key))
+      if (/^(?:utm_|_gl$|_ga(?:_|$)|_gac_|gad_|gclid$|gclsrc$|fbclid$|msclkid$|srsltid$|wbraid$|gbraid$)/i.test(key))
         next.searchParams.delete(key);
   if (
     next &&
@@ -209,7 +211,7 @@ export function misterListing(html: string, url: string) {
       Number(next.searchParams.get("p")) <=
         Number(current.searchParams.get("p") ?? 1))
   )
-    throw new Error("MisterRunning pagination did not advance");
+    throw new RetailerRequestError(`MisterRunning pagination did not advance (page=${current.searchParams.get('p')??1}; next=${next?.pathname}; keys=${[...(next?.searchParams.keys()??[])].join(',')}; nextPage=${next?.searchParams.get('p')})`,true);
   return {
     products: [...products],
     next: finalPage ? null : (next?.href ?? null),

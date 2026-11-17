@@ -12,6 +12,12 @@ test('a known retailer cooldown does not make requests or slide the last-attempt
   expect((await env.DB.prepare("SELECT last_attempt FROM sources WHERE id='sportsdirect'").first<{last_attempt:string}>())?.last_attempt).toBe(now);expect(requests).toBe(0);
  },()=>{requests++;return null;});
 });
+test('an operator-paused catalogue cannot make requests or silently resume after a cooldown',async()=>{
+ let requests=0;await scenario(async(env,run)=>{
+  await env.DB.prepare('INSERT INTO app_state(key,value) VALUES(?,?)').bind('ops:source-pause:warehouse','Awaiting permitted retailer access').run();
+  expect(await advanceCatalogue(env,run,'warehouse')).toMatchObject({done:true,status:'paused',operatorPaused:true});expect(requests).toBe(0);
+ },()=>{requests++;return null;});
+});
 
 test('the same checkpoint engine imports a second shop without duplicating a product shared by departments',async()=>{
  const product='https://www.misterrunning.com/en/mizuno-wave-sky-9-mens-running-shoes-cloudscape-blue-jewel-j1gc2502-61.html',html=await Bun.file('fixtures/misterrunning-product.html').text();

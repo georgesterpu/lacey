@@ -40,6 +40,32 @@ test('a failed paged shop cannot poison a successful small-feed retry or hide it
  expect((await env.DB.prepare("SELECT status,details FROM source_runs WHERE run_id=? AND source_id='warehouse'").bind(id).first())).toEqual({status:'failed',details:'HTTP 406'});
 });
 test('contract failure leaves the last good source snapshot untouched',async()=>{const {env}=await database(),old=await runWithOffers(env,[product(99)]);globalThis.fetch=(async()=>Response.json({products:[{title:'Schema changed'}]})) as unknown as typeof fetch;const result=await scan(env);expect(result.status).toBe('failed');const visible=(await env.DB.prepare('SELECT id FROM current_offers').all<{id:string}>()).results;expect(visible.map(o=>o.id)).toEqual(old.rows.map(o=>o.id));expect((await env.DB.prepare('SELECT status FROM sources WHERE id=?').bind('amphibian').first<{status:string}>())!.status).toBe('error');});
+test('a delayed scheduler recollects an old completed slot before email and preserves its digest identity',async()=>{
+ const {env}=await database(),p=product(707),run=await runWithOffers(env,[p]),old=new Date(Date.now()-7*3600000).toISOString();
+ await env.DB.prepare('UPDATE scan_runs SET slot_key=?,started_at=?,completed_at=?,heartbeat_at=? WHERE id=?').bind(scheduleSlot(),old,old,old,run.id).run();
+ for(const source of ['amphibian','runhub','elverys','lifestyle'])await env.DB.prepare("INSERT INTO source_runs(run_id,source_id,status) VALUES(?,?,'complete')").bind(run.id,source).run();
+ const fresh=product(707,'9','90.00');let collections=0;
+ globalThis.fetch=(async(input:unknown)=>{if(String(input).includes('amphibianking')){collections++;return Response.json({products:[fresh]});}return new Response('',{status:503});}) as typeof fetch;
+ expect(await scan(env)).toMatchObject({runId:run.id,status:'partial'});expect(collections).toBeGreaterThan(0);
+ const observed=await env.DB.prepare('SELECT started_at,completed_at FROM scan_runs WHERE id=?').bind(run.id).first<{started_at:string;completed_at:string}>();
+ expect(observed?.started_at).toBe(old);expect(Date.parse(observed!.completed_at)).toBeGreaterThan(Date.now()-60000);
+ expect((await currentDeals(env)).find(o=>o.source_id==='amphibian')?.price).toBe(9000);
+ await watch(env,'delayed-runner','runner@example.test');const messages:any[]=[];fakeShop([fresh],messages);
+ expect((await planDigests(env,run.id)).planned).toBe(1);expect((await dispatchDigests(env,run.id)).sent).toBe(1);
+ expect((await planDigests(env,run.id)).planned).toBe(0);expect((await dispatchDigests(env,run.id)).sent).toBe(0);expect(messages).toHaveLength(1);
+},10000);
+test('an explicitly paused shop makes no retailer requests while healthy sources refresh',async()=>{
+ const {env}=await database(),reason='Retailer paused: images returned HTTP 403';
+ await env.DB.prepare('INSERT INTO app_state(key,value) VALUES(?,?)').bind('ops:source-pause:lifestyle',reason).run();
+ const requests:string[]=[];globalThis.fetch=(async(input:unknown)=>{const url=String(input);requests.push(url);if(url.includes('lifestylesports'))throw Error('Paused retailer must not be contacted');return Response.json({products:[product(709)]});}) as typeof fetch;
+ const result=await scan(env);expect(result.status).toBe('complete');expect(result.reports).toContainEqual({source:'Life Style Sports',status:'paused',error:reason});expect(requests.some(u=>u.includes('lifestylesports'))).toBe(false);
+});
+test('an expired completed scan still cannot plan or send email without recollection',async()=>{
+ const {env}=await database(),run=await runWithOffers(env,[product(708)]),old=new Date(Date.now()-7*3600000).toISOString();
+ await env.DB.prepare('UPDATE scan_runs SET started_at=?,completed_at=? WHERE id=?').bind(old,old,run.id).run();
+ await watch(env,'expired-runner','runner@example.test');const messages:any[]=[];fakeShop([product(708)],messages);
+ expect((await planDigests(env,run.id)).error).toContain('too old');expect((await dispatchDigests(env,run.id)).status).toBe('scan_expired');expect(messages).toHaveLength(0);
+});
 test('an interrupted snapshot write is never published',async()=>{const {env}=await database(),old=await runWithOffers(env,[product(99)]);const p=product(101);p.variants=Array.from({length:61},(_,i)=>({...p.variants[0],id:10000+i}));globalThis.fetch=(async(input:unknown)=>String(input).includes('amphibianking')?Response.json({products:[p]}):new Response('Unavailable',{status:503})) as typeof fetch;const batch=env.DB.batch;let n=0;env.DB.batch=async statements=>{n++;if(n===3)throw new Error('Simulated write interruption');return batch(statements);};await scan(env);expect((await env.DB.prepare('SELECT id FROM current_offers').all<{id:string}>()).results.map(o=>o.id)).toEqual(old.rows.map(o=>o.id));});
 test('multiple watches become one digest; product validation is shared across subscribers',async()=>{const {env}=await database(),ps=[product(101),product(102)],run=await runWithOffers(env,ps);await watch(env,'w1','one@example.test');await watch(env,'w2','one@example.test');await watch(env,'w3','two@example.test');const messages:any[]=[],network=fakeShop(ps,messages);const plan=await planDigests(env,run.id);expect(plan.planned).toBe(2);const delivery=await dispatchDigests(env,run.id,5);expect(delivery.sent).toBe(2);expect(messages).toHaveLength(2);for(const m of messages){expect(m.html).toContain(ps[0].title);expect(m.html).toContain(ps[1].title);expect(m.html).toContain('variant=1011');expect(m.html).toContain('variant=1021');expect(m.text).toContain('Stop sale emails');}expect(network.counts()).toEqual({heads:2,products:2});await planDigests(env,run.id);expect((await dispatchDigests(env,run.id,5)).sent).toBe(0);expect(messages).toHaveLength(2);});
 test('failed links and changed prices are suppressed before sending',async()=>{for(const options of [{badLink:true},{changedPrice:true}]){const {env}=await database(),ps=[product(105)],run=await runWithOffers(env,ps);await watch(env,'w','one@example.test');const messages:any[]=[];fakeShop(ps,messages,options);await planDigests(env,run.id);const result=await dispatchDigests(env,run.id,5);expect(result.sent).toBe(0);expect(messages).toHaveLength(0);expect((await env.DB.prepare('SELECT status FROM digest_jobs').first<{status:string}>())!.status).toBe('suppressed');}});

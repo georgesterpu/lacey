@@ -12,6 +12,10 @@ on:
         description: Refresh catalogue without sending emails
         type: boolean
         default: false
+      delivery_only:
+        description: Refresh small shops and deliver without starting paged catalogues
+        type: boolean
+        default: false
       resume_run_id:
         description: 'Catalogue-only recovery: resume an existing scan ID (optional)'
         type: string
@@ -54,7 +58,7 @@ jobs:
   catalogue:
     needs: refresh-and-deliver
     # A failed small feed or delivery must not prevent unrelated shop recovery.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.delivery_only }}
     concurrency:
       group: lacey-catalogue-${{ matrix.source }}
       cancel-in-progress: false

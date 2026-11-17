@@ -29,6 +29,8 @@ export async function advanceCatalogue(
     (s) => s.id === sourceId && ["twentyone", "catalogue"].includes(s.adapter),
   );
   if (!source) throw new Error("Unknown catalogue source");
+  const operatorPause=await env.DB.prepare('SELECT value FROM app_state WHERE key=?').bind(`ops:source-pause:${sourceId}`).first<{value:string}>();
+  if(operatorPause)return {done:true,status:'paused',operatorPaused:true,error:operatorPause.value};
   if (
     !(await env.DB.prepare("SELECT id FROM scan_runs WHERE id=?")
       .bind(runId)
