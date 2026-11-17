@@ -35,9 +35,9 @@ function shopIdentity(s:Source){return `<div class="shop-identity">${shopFlag(s.
 function renderProducts(){
  const offers=filtered(),size=value('filter-size');
  const selectedShop=data?.sources.find(s=>`shop:${s.id}`===value('filter-region'));
- const unavailable=selectedShop&&!['live','partial'].includes(selectedShop.status);
- const updating=selectedShop?.error?.startsWith('Updating catalogue:');
  const shopOffers=data?.offers.filter(o=>o.source_id===selectedShop?.id)??[];
+ const unavailable=selectedShop&&(!['live','partial','cached'].includes(selectedShop.status)||(selectedShop.status==='cached'&&!shopOffers.length));
+ const updating=selectedShop?.error?.startsWith('Updating catalogue:');
  const shopSizes=size!=='any'&&shopOffers.length>0&&shopOffers.every(o=>o.size_system==='unknown');
  $('#result-count').textContent=`${offers.length} ${offers.length===1?'deal':'deals'}`;
  $('#clear-filters').hidden=['filter-fit','filter-size','filter-brand','filter-category','filter-region'].every(id=>value(id)==='any');

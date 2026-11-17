@@ -2,6 +2,7 @@ import { jsonField } from "./sql-json";
 import {
   publicSourceStatement,
   publicFailureStatement,
+  canRetainPublished,
   publicProgressStatement,
   saleOffers,
 } from "./public-catalogue";
@@ -311,6 +312,8 @@ export async function advanceCatalogue(
     };
   } catch (error) {
     const message = (error as Error).message.slice(0, 350);
+    const transient=error instanceof RetryableRequestError||(error instanceof RetailerRequestError&&error.retryable)||['TimeoutError','AbortError'].includes((error as Error).name);
+    const retainPublished=transient&&await canRetainPublished(env,sourceId);
     let retry:
       { attempts: number; after: number; createdAt: string } | undefined;
     if (
@@ -331,7 +334,7 @@ export async function advanceCatalogue(
       };
     }
     await env.DB.batch([
-      publicFailureStatement(env, sourceId, message, now),
+      publicFailureStatement(env, sourceId, message, now,retainPublished),
       retry
         ? env.DB.prepare(
             "INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",

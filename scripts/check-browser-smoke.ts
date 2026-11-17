@@ -4,6 +4,13 @@ import { smokeFixture } from "./smoke-fixture";
 const fixture = await smokeFixture();
 try {
   await verifySite(fixture.url);
+  const saved=await fixture.env.DB.prepare("SELECT value FROM app_state WHERE key='public:shop:amphibian'").first<{value:string}>();
+  const cached=JSON.parse(saved!.value);cached.source.status='cached';
+  for(const groups of Object.values(cached.products)as any[][])for(const offer of groups)offer.size_system='unknown';
+  await fixture.env.DB.prepare("UPDATE app_state SET value=? WHERE key='public:shop:amphibian'").bind(JSON.stringify(cached)).run();
+  await verifySite(fixture.url);
+  await fixture.env.DB.prepare("UPDATE app_state SET value=? WHERE key='public:shop:amphibian'").bind(saved!.value).run();
+  console.log('Cached browsing retains the shop-size recovery path.');
   fixture.setMode("stalled-mail");
   await verifySite(fixture.url);
   console.log("Shoes render even when legacy email repair is stalled.");
