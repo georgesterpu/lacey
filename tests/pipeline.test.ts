@@ -10,6 +10,7 @@ import {currentDeals} from '../src/catalogue';
 import {cleanup} from '../src/retention';
 import {handle} from '../src/server';
 import{prepareDelivery}from '../src/preflight';
+import{publicSourceStatement,readPublicCatalogue}from '../src/public-catalogue';
 import {matches,type Env,type Statement,type Offer,type Watch} from '../src/types';
 const open:Database[]=[];const originalFetch=globalThis.fetch;afterEach(()=>{globalThis.fetch=originalFetch;open.splice(0).forEach(d=>d.close());});
 test('the trusted worker checks stock once and the email server consumes its fresh verification without contacting retailers',async()=>{
@@ -59,6 +60,22 @@ test('an explicitly paused shop makes no retailer requests while healthy sources
  await env.DB.prepare('INSERT INTO app_state(key,value) VALUES(?,?)').bind('ops:source-pause:lifestyle',reason).run();
  const requests:string[]=[];globalThis.fetch=(async(input:unknown)=>{const url=String(input);requests.push(url);if(url.includes('lifestylesports'))throw Error('Paused retailer must not be contacted');return Response.json({products:[product(709)]});}) as typeof fetch;
  const result=await scan(env);expect(result.status).toBe('complete');expect(result.reports).toContainEqual({source:'Life Style Sports',status:'paused',error:reason});expect(requests.some(u=>u.includes('lifestylesports'))).toBe(false);
+});
+test('Shopify throttling preserves the last browsing snapshot but cannot supply email matches or trigger repeated same-slot requests',async()=>{
+ const {env}=await database(),run=await runWithOffers(env,[product(710)]);
+ const source=await env.DB.prepare("SELECT * FROM sources WHERE id='amphibian'").first<any>();
+ await publicSourceStatement(env,source,run.rows).run();let requests=0;
+ globalThis.fetch=(async(input:unknown)=>{if(String(input).includes('amphibianking'))requests++;return new Response('',{status:429});}) as typeof fetch;
+ const first=await scan(env);expect(first.status).toBe('partial');expect(first.reports).toContainEqual(expect.objectContaining({source:'Amphibian King',status:'cached'}));
+ expect((await readPublicCatalogue(env)).offers).toHaveLength(1);expect(await currentDeals(env)).toHaveLength(0);
+ await scan(env);expect(requests).toBe(1);
+},10000);
+test('a repeated completed cached slot retains its reports after the collection attempt limit',async()=>{
+ const {env}=await database(),id=crypto.randomUUID(),now=new Date().toISOString();
+ await env.DB.prepare("INSERT INTO scan_runs(id,slot_key,status,started_at,heartbeat_at,completed_at,attempts) VALUES(?,?,'partial',?,?,?,3)").bind(id,scheduleSlot(),now,now,now).run();
+ for(const source of ['amphibian','runhub','elverys','lifestyle'])await env.DB.prepare("INSERT INTO source_runs(run_id,source_id,status) VALUES(?,?,'cached')").bind(id,source).run();
+ globalThis.fetch=(async()=>{throw Error('A repeated cached slot must not contact the retailer')}) as unknown as typeof fetch;
+ const result=await scan(env);expect(result.skipped).toBe(true);expect(result.reports).toHaveLength(4);expect(result.reports!.every(r=>r.status==='cached')).toBe(true);
 });
 test('an expired completed scan still cannot plan or send email without recollection',async()=>{
  const {env}=await database(),run=await runWithOffers(env,[product(708)]),old=new Date(Date.now()-7*3600000).toISOString();

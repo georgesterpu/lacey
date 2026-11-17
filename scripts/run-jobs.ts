@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 interface Scan {
   runId: string;
   status: string;
-  reports?: unknown;
+  reports?: {status:string}[];
 }
 interface Catalogue {
   done: boolean;
@@ -214,7 +214,8 @@ await writeFile(`.data/backups/lacey-${scan.runId}.enc`, bytes, {
   mode: 0o600,
 });
 console.log(JSON.stringify({ stage: "backed_up", bytes: bytes.byteLength }));
-if (scan.status === "partial")
+if (scan.status === "partial"&&(!scan.reports||scan.reports.some(r=>r.status==='failed')))
   throw new Error(
     "A shop failed validation; healthy sources were processed. Inspect source checks.",
   );
+if(scan.reports?.some(r=>r.status==='cached'))console.log('Some shop refreshes are delayed. Previous browsing snapshots retain their original timestamps; failed sources are excluded from email matching.');

@@ -4,7 +4,9 @@ import {
   readPublicCatalogue,
   publicProductStatement,
   publicFailureStatement,
+  canRetainPublished,
 } from "../src/public-catalogue";
+import {currentDeals} from '../src/catalogue';
 import type { Offer } from "../src/types";
 test("public reads only its projection; concurrent stock updates and source failures cannot leave known bad offers", async () => {
   const f = await smokeFixture("");
@@ -58,3 +60,20 @@ test("public reads only its projection; concurrent stock updates and source fail
     f.close();
   }
 }, 15000);
+test('a delayed refresh retains bounded browsing facts without authorizing stale email candidates',async()=>{
+ const f=await smokeFixture('');try{
+  const source=await f.env.DB.prepare("SELECT last_success FROM sources WHERE id='amphibian'").first<{last_success:string}>();
+  expect(await canRetainPublished(f.env,'amphibian')).toBe(true);
+  await f.env.DB.prepare("UPDATE sources SET status='error',error='Store returned HTTP 429' WHERE id='amphibian'").run();
+  await publicFailureStatement(f.env,'amphibian','Store returned HTTP 429',new Date().toISOString(),true).run();
+  expect((await readPublicCatalogue(f.env)).offers).toHaveLength(500);
+  expect(await currentDeals(f.env)).toHaveLength(0);
+  expect((await f.env.DB.prepare("SELECT last_success FROM sources WHERE id='amphibian'").first<{last_success:string}>())?.last_success).toBe(source?.last_success);
+  await f.env.DB.prepare("INSERT INTO app_state(key,value) VALUES('ops:source-pause:amphibian','Access review')").run();
+  expect(await canRetainPublished(f.env,'amphibian')).toBe(false);
+  const row=await f.env.DB.prepare("SELECT value FROM app_state WHERE key='public:shop:amphibian'").first<{value:string}>();
+  const record=JSON.parse(row!.value);for(const groups of Object.values(record.products)as any[][])for(const offer of groups)offer.checked_at=new Date(Date.now()-31*3600000).toISOString();
+  await f.env.DB.prepare("UPDATE app_state SET value=? WHERE key='public:shop:amphibian'").bind(JSON.stringify(record)).run();
+  expect((await readPublicCatalogue(f.env)).offers).toHaveLength(0);
+ }finally{f.close();}
+},15000);

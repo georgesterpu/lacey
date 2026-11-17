@@ -48,8 +48,10 @@ export async function collect(source:typeof sources[number],now:string) {
   const seenIds=new Set<number>();
   for(let page=1;page<=40;page++){
   if(Date.now()>deadline)throw new Error('Collection exceeded its time budget; previous snapshot kept');
-  const response=await fetch(`${source.url}/collections/${collection}/products.json?limit=250&page=${page}`,{headers:{'User-Agent':'Lacey/0.4 (+size-aware running-shoe price checks)'},signal:AbortSignal.timeout(20000)});
-  if(!response.ok)throw new Error(`Store returned HTTP ${response.status}`);
+  let response:Response;
+  try{response=await fetch(`${source.url}/collections/${collection}/products.json?limit=250&page=${page}`,{headers:{'User-Agent':'Lacey/0.4 (+size-aware running-shoe price checks)'},signal:AbortSignal.timeout(20000)});}
+  catch{throw new StoreUnavailableError('Store network request failed');}
+  if(!response.ok){if(response.status===429||response.status>=500)throw new StoreUnavailableError(`Store returned HTTP ${response.status}`);throw new Error(`Store returned HTTP ${response.status}`);}
   const data=await response.json() as {products:unknown[]};if(!Array.isArray(data.products))throw new Error('Contract changed: products array missing');
   for(const product of data.products){seen++;if(!isProduct(product)){rejected++;continue;}
    if(seenIds.has(product.id))throw new Error('Store repeated a product across pages; snapshot withheld');
@@ -60,3 +62,4 @@ export async function collect(source:typeof sources[number],now:string) {
  if(seen>0&&rejected/seen>.05)throw new Error(`Contract validation failed for ${rejected}/${seen} products; snapshot quarantined`);
  return {offers:[...result.values()],complete,rejected,seen,held};
 }
+export class StoreUnavailableError extends Error {}

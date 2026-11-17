@@ -165,6 +165,13 @@ test('MisterRunning strips advertising tags but rejects stale cached pages with 
  expect(misterListing(product+pager+next,'https://www.misterrunning.com/en/mens-running-shoes/?p=2').next).toBe('https://www.misterrunning.com/en/mens-running-shoes/?p=3');
  try{misterListing(product+pager.replace('current">2','current">1')+next,'https://www.misterrunning.com/en/mens-running-shoes/?p=2');throw Error('Expected stale-page error');}catch(error){expect(error).toMatchObject({retryable:true});}
 });
+test('MisterRunning discovers single-colour cards without colour-selector attributes and excludes full-price cards',()=>{
+ const card=(id:number,price:string,reference:string)=>`<li class="item" data-pid="${id}"><div class="inner_item"><a href="${mr.replace('j1gc2502-61',`sku-${id}`)}">Shoe</a><span class="data_price"><span class="price offer mr-card-coupon-price">€ ${price}</span></span>${reference?`<span class="special"><i>&euro; ${reference}</i></span>`:''}<ul><li>Size</li></ul></div></li>`;
+ const html=`<ul class="display" id="product-list">${card(1,'101,25','150,00')}${card(2,'150,00','')}</ul><a rel="next" href="?p=7">Next</a>`;
+ const page=misterListing(html,'https://www.misterrunning.com/en/mens-running-shoes/?p=6');
+ expect(page.products).toHaveLength(1);expect(page.products[0]).toContain('sku-1.html');expect(page.next).toEndWith('?p=7');
+ expect(page.fingerprint).toContain('sku-2.html');
+});
 test("Sports Direct discovers rendered products beyond the truncated SEO sample", () => {
   const second = sd.replace("211073", "999999"),
     html = `<script type="application/ld+json">${JSON.stringify({ "@type": "ItemList", itemListElement: [{ item: { name: "Running shoe", url: sd + "#colcode=21107341" } }] })}</script><a href="${sd}#colcode=21107341">First</a><a href="${second}#colcode=99999901">Beyond SEO sample</a><a aria-label="Go To Next Page" aria-disabled="true" href="/sale/running/shoes">Next</a>`;

@@ -165,8 +165,6 @@ export function misterListing(html: string, url: string) {
   const anchors = [...html.matchAll(/<a\b[^>]*>/g)]
     .map((m) => m[0])
     .filter((a) => /data-products-price=/.test(a));
-  if (!anchors.length)
-    throw new Error("MisterRunning catalogue price contract missing");
   const observed = new Set<string>(),
     products = new Set<string>();
   const amount = (value: string) => {
@@ -184,6 +182,29 @@ export function misterListing(html: string, url: string) {
     // Discover all colours on every page, but fetch stock only for real sales.
     if (previous && current * 100 <= previous * 80) products.add(link);
   }
+  // Single-colour cards have no colour-selector price attributes. Read the
+  // actual product grid too; navigation/recommendation links are not products.
+  const open=html.match(/<ul\b[^>]*\bid="product-list"[^>]*>/);
+  if(open){
+    const rest=html.slice(open.index!+open[0].length);let depth=1,end=-1;
+    for(const tag of rest.matchAll(/<\/?ul\b[^>]*>/gi)){
+      depth+=tag[0].startsWith('</')?-1:1;if(!depth){end=tag.index!;break;}
+    }
+    if(end<0)throw new Error('MisterRunning product grid is incomplete');
+    const grid=rest.slice(0,end),starts=[...grid.matchAll(/<li\b[^>]*class="item(?: [^"]*)?"[^>]*>/g)];
+    for(let i=0;i<starts.length;i++){
+      if(!/\bdata-pid="\d+"/.test(starts[i][0]))continue;
+      const card=grid.slice(starts[i].index!,starts[i+1]?.index??grid.length);
+      const href=card.match(/<a\b[^>]*href="([^"]+)"/)?.[1];
+      if(!href)throw new Error('MisterRunning product-card link missing');
+      const link=misterLink(decode(href));if(!/shoes/.test(link))continue;
+      const current=amount(card.match(/<span class="data_price">([\s\S]*?)<\/span>/)?.[1]??'');
+      const previous=amount(card.match(/<span class="special">\s*<i>([\s\S]*?)<\/i>/)?.[1]??'');
+      if(current===null)throw new Error('MisterRunning product-card EUR price missing');
+      observed.add(link);if(previous&&current*100<=previous*80)products.add(link);
+    }
+  }
+  if(!observed.size)throw new Error('MisterRunning catalogue price contract missing');
   const tag = [...html.matchAll(/<a\b[^>]*>/g)].find((m) =>
       /rel="next"/.test(m[0]),
     )?.[0],

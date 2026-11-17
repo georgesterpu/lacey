@@ -70,7 +70,7 @@ export async function readPublicCatalogue(env: Env) {
       adapter: config.adapter,
     };
     const groups: Group[] =
-      record && ["live", "partial"].includes(source.status)
+      record && ["live", "partial", "cached"].includes(source.status)
         ? (Object.values(record.products).flat() as Group[]).filter(
             (o) =>
               o.available === 1 &&
@@ -115,12 +115,19 @@ export function publicFailureStatement(
   sourceId: string,
   error: string,
   at: string,
+  retainPublished = false,
 ) {
   return patchPublic(env, sourceId, [
-    [["source", "status"], "error"],
+    [["source", "status"], retainPublished ? "cached" : "error"],
     [["source", "error"], error],
     [["source", "last_attempt"], at],
   ]);
+}
+// Browsing may retain an unchanged, already published snapshot after a
+// transport failure. Email queries still exclude the failed source in SQL.
+export async function canRetainPublished(env:Env,sourceId:string){
+  const row=await env.DB.prepare("SELECT s.id FROM sources s WHERE s.id=? AND s.live_snapshot_id IS NOT NULL AND s.last_success>=? AND EXISTS(SELECT 1 FROM app_state a WHERE a.key=?) AND NOT EXISTS(SELECT 1 FROM app_state p WHERE p.key=?)").bind(sourceId,freshCutoff(),key(sourceId),`ops:source-pause:${sourceId}`).first();
+  return !!row;
 }
 export function publicStateStatement(
   env: Env,
