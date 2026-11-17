@@ -35,8 +35,10 @@ send messages to members as part of automated QA.
   once, retains its own anonymous cookie and requests shoes with GET. Previously
   every shoe independently reposted VAT without retaining the session. Local
   checks verified the supplied Boston 13 link and the ASICS page where the
-  previous crawl stopped. **Only a completed cloud crawl proves collection
-  coverage**; a good local sample does not lift a shop's blocked status.
+  previous crawl stopped. The cloud diagnostic also verified the Boston page,
+  but the full scheduled-worker retry still returned **HTTP 406**. Warehouse
+  remains unavailable for this beta. A working sample does not lift its blocked
+  status; no further block-bypassing attempts are justified for this pilot.
 - Selecting an unavailable shop explains that it could not be checked and gives
   a route back to other shops. It no longer claims that there are no deals there.
   Unconfirmed shop sizes have a separate route to browse without a UK filter;
@@ -44,6 +46,9 @@ send messages to members as part of automated QA.
 - Form throttling uses the client address supplied by Vercel, rather than an
   overriding client-supplied Cloudflare header. The regression check proves that
   changing the forged header cannot create another allowance.
+- Native HTTP connection failures are classified as retryable transport errors,
+  rather than quarantined as malformed products or silently omitted from a
+  source with otherwise valid records.
 - The obsolete browser script that wrote synthetic records to an arbitrary
   remote database was removed. State-changing interactive QA requires a local
   app. CI's native Postgres flow creates and removes an isolated test schema;
@@ -72,10 +77,12 @@ evidence. No broad rewrite, dependency upgrade or database migration was needed.
 ## Known limits before a wider launch
 
 - Source coverage varies; the live shop cards and timestamps are authoritative.
-  Sports Direct remains optional while its worker is blocked. Keep Warehouse
-  optional until its new session flow completes and stays reliable.
+  Sports Direct and Warehouse remain optional while their workers are blocked.
+  Neither is required to test watches against the six publishing shops.
 - Savings use each shop's reference price. Delivery costs and promotions can
   change; the destination shop confirms the final purchase price and stock.
+  Automatic coupon discovery/stacking and delivery-inclusive ranking are not
+  implemented.
 - Email verification is browser/address scoped. A new browser needs verification;
   it does not import a watchlist from another device. This is deliberate for the
   account-free beta, but should be explained if testers find it confusing.

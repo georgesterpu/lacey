@@ -82,13 +82,17 @@ async function document(url: URL, irelandVAT = false): Promise<string> {
     status = Number(body.slice(cut + 1));
     text = body.slice(0, cut);
   } else {
-    const r = await fetch(url, {
-      redirect: "manual",
-      headers: { "User-Agent": "Lacey/0.4 (+https://lacey.january.ie)" },
-      signal: AbortSignal.timeout(20000),
-    });
-    status = r.status;
-    text = await r.text();
+    try {
+      const r = await fetch(url, {
+        redirect: "manual",
+        headers: { "User-Agent": "Lacey/0.4 (+https://lacey.january.ie)" },
+        signal: AbortSignal.timeout(20000),
+      });
+      status = r.status;
+      text = await r.text();
+    } catch {
+      throw new RetailerRequestError("Retailer network request failed", true);
+    }
   }
   if ([401, 403, 406, 429].includes(status))
     throw new RetailerRequestError(
