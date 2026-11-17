@@ -5,7 +5,7 @@ on:
       source:
         description: Retailer to check without database or email credentials
         type: choice
-        options: [warehouse, sportsdirect, all]
+        options: [warehouse, sportsdirect, all, incident]
         default: warehouse
       product_url:
         description: Optional public Warehouse product to verify in the same country session
@@ -23,7 +23,12 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - run: bun scripts/check-retailer-access.ts
+      - if: ${{ inputs.source != 'incident' }}
+        run: bun scripts/check-retailer-access.ts
         env:
           RETAILER_SOURCE: ${{ inputs.source }}
           RETAILER_PRODUCT_URL: ${{ inputs.product_url }}
+      - if: ${{ inputs.source == 'incident' }}
+        run: bun scripts/diagnose-retailers.ts
+        env:
+          BUN_CHROME_PATH: /usr/bin/google-chrome
