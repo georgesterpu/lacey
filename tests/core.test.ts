@@ -48,6 +48,12 @@ test('shop flags distinguish European retailers from Irish storefronts',()=>{
  for(const id of ['misterrunning','warehouse','21run'])expect(shopLocation(id)).toEqual({region:'EU',flag:'🇪🇺',label:'EU shop'});
  for(const id of ['amphibian','runhub','elverys','lifestyle','sportsdirect'])expect(shopLocation(id)).toEqual({region:'IE',flag:'🇮🇪',label:'Irish shop'});
 });
+test('a forged Cloudflare header cannot bypass Vercel form throttling',async()=>{
+ const env=await database();const {rateLimit}=await import('../src/identity');
+ const r=(fake:string)=>new Request('https://shoe.test/api/feedback',{headers:{'x-vercel-forwarded-for':'192.0.2.1','x-forwarded-for':'192.0.2.1','CF-Connecting-IP':fake}});
+ expect(await rateLimit(env,r('198.51.100.1'),'feedback',1)).toBe(true);
+ expect(await rateLimit(env,r('198.51.100.2'),'feedback',1)).toBe(false);
+});
 test('public dashboard ignores forged account headers and never returns other-device watches',async()=>{
  const env=await database();await handle(request('/api/watches','POST','alice',watchInput),env,'');
  const guest=await (await handle(request('/api/dashboard','GET',undefined,undefined,{'oai-authenticated-user-id':'alice','oai-authenticated-user-email':watchInput.email}),env,'')).json();

@@ -34,6 +34,11 @@ function shoeTitle(o:Group){return o.title.replace(/\b(?:men[’']?s|women[’']
 function shopIdentity(s:Source){return `<div class="shop-identity">${shopFlag(s.id)}<span>${esc(s.name)}</span><span class="region-label">${esc(s.label)}</span></div>`;}
 function renderProducts(){
  const offers=filtered(),size=value('filter-size');
+ const selectedShop=data?.sources.find(s=>`shop:${s.id}`===value('filter-region'));
+ const unavailable=selectedShop&&!['live','partial'].includes(selectedShop.status);
+ const updating=selectedShop?.error?.startsWith('Updating catalogue:');
+ const shopOffers=data?.offers.filter(o=>o.source_id===selectedShop?.id)??[];
+ const shopSizes=size!=='any'&&shopOffers.length>0&&shopOffers.every(o=>o.size_system==='unknown');
  $('#result-count').textContent=`${offers.length} ${offers.length===1?'deal':'deals'}`;
  $('#clear-filters').hidden=['filter-fit','filter-size','filter-brand','filter-category','filter-region'].every(id=>value(id)==='any');
  $('#products').innerHTML=offers.length?offers.slice(0,shown).map(o=>{
@@ -43,7 +48,7 @@ function renderProducts(){
   const link=size!=='any'?(o.sizeUrls?.[size]??o.url):o.url;
   const comparison=o.comparisons?.length?`<details class="shop-comparison"><summary>Other shops (${o.comparisons.length})</summary>${o.comparisons.map(v=>{const s=data!.sources.find(s=>s.id===v.source_id)!;return `<a href="${esc(size!=='any'?(v.sizeUrls[size]??v.url):v.url)}" target="_blank" rel="noopener noreferrer"><span>${shopFlag(s.id)} ${esc(s.name)}</span><strong>${euro(v.price)} ↗</strong><small>${esc(v.size_system==='unknown'?'Shop size':v.size_system)} ${esc(size!=='any'?size:v.sizes.join(' · '))}</small></a>`;}).join('')}</details>`:'';
   return `<article class="product-card"><div class="product-photo"><span class="discount-tag">${o.discount}% off</span>${o.image?`<img src="${esc(o.image)}" alt="${esc(o.title)}${o.colour?' in '+esc(o.colour):''}" loading="lazy" width="350" height="230">`:''}</div><div class="product-content">${shopIdentity(shop)}<h3>${esc(shoeTitle(o))}</h3><p class="shoe-fit">${esc(fitNames[o.fit])}</p><p class="product-price">${euro(o.price)} <del aria-label="Shop’s reference price ${euro(o.reference_price!)}">${euro(o.reference_price!)}</del></p><div class="product-sizes">${esc(sizeLabel)}</div><div class="product-buttons"><a class="button button-dark" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Shop at ${esc(shop.name)} <span aria-hidden="true">↗</span></a><button class="watch-shoe" data-watch-offer="${esc(o.id)}" aria-label="Watch ${esc(o.title)} for a deal">Watch this shoe</button></div>${comparison}</div></article>`;
- }).join(''):`<div class="empty-state"><h3>${data?.lastScan?'No matches. Yet 👀':'The first check is on its way.'}</h3><p>${data?.lastScan?'No deals match these filters. Try an individual shop, or save a watch.':'Save your size and we’ll look for a deal.'}</p><button class="button button-dark" data-action="new-watch">Watch for a deal <span aria-hidden="true">↗</span></button></div>`;
+ }).join(''):unavailable?`<div class="empty-state"><h3>${esc(updating?`We’re checking ${selectedShop.name}`:`We can’t check ${selectedShop.name} right now`)}</h3><p>${updating?'Its deals will appear after the catalogue checks finish.':'This doesn’t mean there are no deals. Try another shop for now.'}</p><button class="button button-dark" data-action="all-shops">Browse other shops</button></div>`:shopSizes?`<div class="empty-state"><h3>Let’s check the size at the shop</h3><p>Browse all sizes, then check the UK equivalent at the shop.</p><button class="button button-dark" data-action="all-sizes">Browse all sizes</button></div>`:`<div class="empty-state"><h3>${data?.lastScan?'No matches. Yet 👀':'The first check is on its way.'}</h3><p>${data?.lastScan?'No deals match these filters. Try an individual shop, or save a watch.':'Save your size and we’ll look for a deal.'}</p><button class="button button-dark" data-action="new-watch">Watch for a deal <span aria-hidden="true">↗</span></button></div>`;
  $('#show-more').hidden=shown>=offers.length;
 }
 function renderWatches(){
@@ -109,6 +114,8 @@ document.addEventListener('click',async event=>{
  const target=(event.target as HTMLElement).closest<HTMLElement>('button');if(!target)return;
  if(target.dataset.tab)tab(target.dataset.tab);
  if(target.dataset.action==='new-watch')openWatch();
+ if(target.dataset.action==='all-shops'){$<HTMLSelectElement>('#filter-region').value='any';renderProducts();}
+ if(target.dataset.action==='all-sizes'){$<HTMLSelectElement>('#filter-size').value='any';renderProducts();}
  if(target.dataset.action==='retry-load'){target.setAttribute('disabled','');load().catch(showLoadError);}
  if(target.dataset.close)$<HTMLDialogElement>(`#${target.dataset.close}`).close();
  if(target.dataset.watchOffer)openWatch(data!.offers.find(o=>o.id===target.dataset.watchOffer));

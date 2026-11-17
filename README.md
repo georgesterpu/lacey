@@ -86,8 +86,10 @@ See [the production runbook](docs/deployment-handoff.md) for the project, isolat
 
 ## Retailer connection audit (November 2026)
 
-All eight connectors are implemented; implementation is separate from successful publication. Shopify feeds follow pagination to the end. The four paged retailers use persistent cursors, independent workers and atomic publication, with no product-name allowlists or first-24-product cap. Lifestyle still checks only five sale products per department and up to ten numeric size choices. Unknown units remain shop-specific.
+All eight connectors are implemented; implementation is separate from successful publication. Shopify feeds follow pagination to the end. The four paged retailers use persistent cursors, independent workers and atomic publication, with no product-name allowlists or first-24-product cap. Lifestyle checks all discovered sale products and all supported numeric size choices on the permitted entry pages. Further Lifestyle pagination is disallowed by its robots rules, so coverage remains explicitly limited. Unknown units remain shop-specific.
 
 The [connector contracts](docs/retailer-connectors.md) describe actual price, stock, country, size and URL checks. The [17 November audit](docs/retailer-audit-2026-11-17.md) records completed catalogues, quarantines and the remaining Sports Direct/Warehouse cloud blocks. A successful sample fetch never counts as a full import. GitHub integration to Vercel is connected; main-branch auto-production deployment stays disabled so the guarded release command controls promotion.
+
+See the [club-beta assessment](docs/beta-readiness.md) for launch scope, the follow-up country-session work, known limits and the evidence to require before expanding the audience.
 
 Email ownership is stored independently of watches in `email_identities`. First signup sends verification automatically; one confirmation activates that browser’s pending watches and future watches for the address. Deleting a watch does not discard verification. The optional resend action uses short throttling and preserves an uncertain delivery’s token/idempotency key. Existing consented watches with no attempted verification are repaired automatically when their owner reopens the app. `bun scripts/browser-verification.ts` tests this flow against an in-memory database and fake mail provider.

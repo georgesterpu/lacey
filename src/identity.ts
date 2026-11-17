@@ -12,7 +12,9 @@ export async function claim(env:Env,key:string,value=randomToken()) {
  return (await env.DB.prepare('SELECT value FROM app_state WHERE key=?').bind(key).first<{value:string}>())?.value===value;
 }
 export async function rateLimit(env:Env,request:Request,action:string,limit:number) {
- const address=request.headers.get('CF-Connecting-IP')??request.headers.get('x-forwarded-for')?.split(',')[0]??'unknown';
+ // Vercel overwrites this header. A client-supplied Cloudflare header must not
+ // override the platform's client address and bypass the form rate limit.
+ const address=request.headers.get('x-vercel-forwarded-for')?.split(',')[0]??request.headers.get('x-forwarded-for')?.split(',')[0]??'unknown';
  const key=`rate:${action}:${await digest(address)}:${new Date().toISOString().slice(0,13)}`;
  for(let i=0;i<limit;i++)if(await claim(env,`${key}:${i}`))return true;
  return false;

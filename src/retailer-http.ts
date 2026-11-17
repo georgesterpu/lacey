@@ -1,11 +1,26 @@
 import { robotsAllows } from "./twentyone";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 const origins = new Set([
   "https://ie.sportsdirect.com",
   "https://www.misterrunning.com",
   "https://www.runningwarehouse.eu",
+  "https://www.lifestylesports.com",
 ]);
 const policies = new Map<string, { text: string; until: number }>(),
   slots = new Map<string, number>();
+let warehouseCookies: string | undefined;
+let warehousePreferences: Promise<void> | undefined;
+function warehouseCookieJar() {
+  if (!warehouseCookies) {
+    const directory = mkdtempSync(join(tmpdir(), "lacey-warehouse-"));
+    warehouseCookies = join(directory, "cookies");
+    writeFileSync(warehouseCookies, "", { mode: 0o600 });
+    process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
+  }
+  return warehouseCookies;
+}
 export class RetailerRequestError extends Error {
   constructor(
     message: string,
@@ -23,7 +38,8 @@ async function document(url: URL, irelandVAT = false): Promise<string> {
     ["ie.sportsdirect.com", "www.runningwarehouse.eu"].includes(url.hostname)
   ) {
     // This storefront stalls Bun's HTTP transport. Use the standard curl
-    // client, without browser automation, cookies, proxies or blocked APIs.
+    // client, without browser automation, impersonation, proxies or blocked APIs.
+    // Warehouse retains only this worker's anonymous language/country session.
     if (!Bun.which("curl"))
       throw new RetailerRequestError(
         "This retailer requires the curl HTTP transport on this worker",
@@ -44,7 +60,10 @@ async function document(url: URL, irelandVAT = false): Promise<string> {
         "10000000",
         "--write-out",
         "\n%{http_code}",
-        ...(irelandVAT ? ["--data", "vat=IE"] : []),
+        ...(url.hostname === "www.runningwarehouse.eu"
+          ? ["--cookie", warehouseCookieJar(), "--cookie-jar", warehouseCookieJar()]
+          : []),
+        ...(irelandVAT ? ["--data", "lang=en&vat=IE"] : []),
         url.href,
       ],
       { stdout: "pipe", stderr: "pipe" },
@@ -111,5 +130,19 @@ export async function retailerPage(
     throw new RetailerRequestError(
       "Retailer robots rules do not allow this page",
     );
-  return document(url, irelandVAT);
+  if (irelandVAT) {
+    warehousePreferences ??= (async () => {
+      // Match the public preference form once, then browse with that session.
+      // Reposting a country form on every shoe is not the browser's journey.
+      if (!robotsAllows(policy.text, "/"))
+        throw new RetailerRequestError("Warehouse preference page is disallowed");
+      await document(new URL("/", url));
+      const selected = await document(new URL("/", url), true);
+      if (!/value="IE"[^>]*selected/.test(selected))
+        throw new RetailerRequestError("Warehouse Ireland session was not confirmed");
+    })();
+    try { await warehousePreferences; }
+    catch (error) { warehousePreferences = undefined; throw error; }
+  }
+  return document(url);
 }

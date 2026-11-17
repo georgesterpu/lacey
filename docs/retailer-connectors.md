@@ -18,7 +18,8 @@ pointer; interrupted results remain unpublished.
   pagination; an active backwards link remains an error.
 - **Warehouse:** every discovered product in the men's and women's sale pages,
   using the catalogue's actual URLs. Each product uses the shop's country
-  preference form (`POST vat=IE`), with a clean customer link;
+  preference form (`POST lang=en&vat=IE`) once per worker, then ordinary GETs
+  using its private anonymous session cookie, with a clean customer link;
   the parser requires selected Ireland, VAT-inclusive EUR and labelled UK size
   rows. Numeric stock including `3+` is available; lead times such as `15 Days`
   are excluded. No manufactured descpage URLs or fixed first-24-product cap.
@@ -35,8 +36,11 @@ pointer; interrupted results remain unpublished.
 Sports Direct's public pages stalled Bun's HTTP clients during this audit. Its
 connector therefore invokes the normal system **curl** HTTP client through
 `Bun.spawn`; this is an explicit runtime dependency, not another app runtime.
-There are no cookies, browser impersonation, rotating proxies, private API calls
-or CAPTCHA solving. The blocked `/api` routes are not used. The collection
+Warehouse keeps its own first-party anonymous preference cookie in a private
+temporary file, deleted when the worker exits. It never imports a member's
+browser session. Other retailers do not use that cookie jar. There is no browser
+impersonation, rotating proxy, private API call or CAPTCHA solving. The blocked
+`/api` routes are not used. The collection
 worker requires curl; Warehouse also uses that standard client after the native
 client received HTTP 406 on the runner. These are checks on the collection
 worker, not a promise that a retailer accepts all cloud networks. Other sources
@@ -72,7 +76,12 @@ verification. Trademark symbols are removed before model-key normalization so
 they cannot accidentally introduce the letters `TM` into a model identity.
 
 The small Shopify feeds and the explicitly limited Lifestyle connector retain
-their own source refresh. Full normalized inventory totals are separate from
+their own source refresh. Lifestyle no longer stops after five products or ten
+sizes: it checks every discovered sale listing and supported numeric size on
+the three public entry pages, respecting the disallowed pagination URLs. It
+uses the same paced, robots-aware transport and a seven-minute source budget;
+expiry fails the update instead of publishing a silently truncated result.
+Full normalized inventory totals are separate from
 available offers discounted at least 20%. Unavailable or full-price size rows do
 not accumulate in new sale snapshots. Retention remains independent of ingestion.
 

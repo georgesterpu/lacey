@@ -30,7 +30,7 @@ export async function scan(env:Env) {
     if(complete&&(prior?.product_count??0)>=50&&count<prior!.product_count*.5)throw new Error('Catalogue shrank by over 50%; snapshot quarantined for review');
     const snapshot=`${runId}:${source.id}:${crypto.randomUUID()}`;
     const partial=!complete||rejected>0;
-    const details=[!complete?(source.adapter==='lifestyle'?'Coverage limited to 5 sale products per department and 10 listed sizes':'Incomplete catalogue coverage'):'',rejected?`${rejected} invalid product records withheld`:'',held?`${held} unsupported products excluded`:''].filter(Boolean).join('; ')||null;
+    const details=[!complete?(source.adapter==='lifestyle'?'Entry catalogue pages only; further pagination is disallowed by retailer robots rules':'Incomplete catalogue coverage'):'',rejected?`${rejected} invalid product records withheld`:'',held?`${held} unsupported products excluded`:''].filter(Boolean).join('; ')||null;
     // Persist the actionable sale catalogue, not thousands of unavailable or
     // full-price sizes. Inventory totals above still describe the entire feed.
     const eligibleOffers=saleOffers(offers);

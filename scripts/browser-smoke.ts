@@ -22,9 +22,11 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
       url: string;
       sizes: string[];
       source_id: string;
+      size_system: string;
     }[];
     sources: {
       id: string;
+      status: string;
       url: string;
       product_count: number;
       current_deals: number;
@@ -201,6 +203,19 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
       while (Date.now() < until && !(await view.evaluate('[...document.querySelectorAll(".product-card img")].some(i=>i.complete&&i.naturalWidth>0)')))
         await Bun.sleep(100);
       assert.ok(await view.evaluate('[...document.querySelectorAll(".product-card img")].some(i=>i.complete&&i.naturalWidth>0)'), `No ${source.id} shoe image loaded at ${width}px`);
+      if(data.offers.filter(o=>o.source_id===source.id).every(o=>o.size_system==='unknown')){
+        await view.evaluate(`(()=>{const f=document.querySelector('#filter-size');f.value='9';f.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        assert.ok(await view.evaluate('!!document.querySelector("#products [data-action=all-sizes]")'), 'Unconfirmed size units need a clear recovery path');
+        await view.evaluate('document.querySelector("#products [data-action=all-sizes]").click()');
+        assert.ok(await view.evaluate('document.querySelectorAll(".product-card").length>0'), 'Browse all sizes did not recover the shoe list');
+      }
+    }
+    const unavailable = data.sources.find(s=>s.current_deals===0&&!['live','partial'].includes(s.status));
+    if(unavailable){
+      await view.evaluate(`(()=>{const s=document.querySelector('#filter-region');s.value=${JSON.stringify(`shop:${unavailable.id}`)};s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+      assert.ok(await view.evaluate('!!document.querySelector("#products [data-action=all-shops]")'), 'An unchecked shop must explain its status rather than claim no matching deals');
+      await view.evaluate('document.querySelector("#products [data-action=all-shops]").click()');
+      assert.ok(await view.evaluate('document.querySelectorAll(".product-card").length>0'), 'Browse other shops did not recover the shoe list');
     }
     console.log(
       `Browser ${width}px: shoes, images and individual-shop filters loaded in ${Math.round(performance.now() - rendered)}ms`,
