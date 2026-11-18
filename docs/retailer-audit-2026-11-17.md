@@ -84,8 +84,8 @@ remains enabled. Production still has **5 watches, 1 subscriber and 1 feedback
 entry**; member records were not reset or edited for this work. Catalogue-only
 rechecks and browser checks did not request real test emails.
 
-GitHub evidence: [completed 21RUN/MisterRunning recovery](https://github.com/georgesterpu/shoehoo-jobs/actions/runs/43979670680),
-[product-level access samples](https://github.com/georgesterpu/shoehoo-jobs/actions/runs/43978725590),
-[Sports Direct resumed-worker block](https://github.com/georgesterpu/shoehoo-jobs/actions/runs/44039970414).
+GitHub evidence: [completed 21RUN/MisterRunning recovery](https://github.com/georgesterpu/lacey/actions/runs/43979670680),
+[product-level access samples](https://github.com/georgesterpu/lacey/actions/runs/43978725590),
+[Sports Direct resumed-worker block](https://github.com/georgesterpu/lacey/actions/runs/44039970414).
 See [connector contracts](retailer-connectors.md) and
 [production reliability](production-reliability.md) for the ongoing rules.

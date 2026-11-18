@@ -54,7 +54,7 @@ for (let attempt = 0; attempt < 18; attempt++) {
         "run",
         "list",
         "--repo",
-        "georgesterpu/shoehoo-jobs",
+        "georgesterpu/lacey",
         "--workflow",
         "quality.yml",
         "--commit",

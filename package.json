@@ -28,5 +28,11 @@
   },
   "dependencies": {
     "@libsql/client": "0.18.0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/georgesterpu/lacey.git"
+  },
+  "homepage": "https://lacey.january.ie"
 }

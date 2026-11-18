@@ -1,3 +1,5 @@
+> Public-source handoff: production operations now live in the separate private `lacey-ops` repository. The sections below also retain dated migration history. Never add production keys or customer exports to this public repository.
+
 # Lacey production: Vercel and january.ie
 
 Vercel project **lacey**, ID `prj_dMJPR26hdpOfYyHecvwO6aMNeiNi`, under **george-sterpus-projects**. It is independent of `blockops`; no BlockOps settings, credentials or storage are reused. The sender is **Lacey <lacey@january.ie>**. The canonical website is **https://lacey.january.ie**. The main january.ie website stays independent. The temporary production alias is **https://lacey-january.vercel.app**.
@@ -65,7 +67,7 @@ Emails are kept behind server-side credentials. The public API does not expose a
 
 ## Scheduler and isolation
 
-The existing private GitHub repository `georgesterpu/shoehoo-jobs` remains the source/CI/scheduler repository. The deterministic runner targets 08:00 and 20:00 Europe/Dublin, with catch-up triggers and a fresh Lacey-only `CRON_SECRET`. After the Vercel cutover, its `APP_URL` points to the Vercel production alias until the custom domain resolves, then to lacey.january.ie. It has no LLM dependency. The earlier ChatGPT task still requires separate account cleanup if enabled; it is not used by this runner.
+The public GitHub repository `georgesterpu/lacey` contains the app and isolated CI. Production schedules, secrets, execution logs and encrypted backup artifacts belong to the separate private `georgesterpu/lacey-ops` repository; see `operations/README.md` for templates. The deterministic runner targets 08:00 and 20:00 Europe/Dublin, with catch-up triggers and a fresh Lacey-only `CRON_SECRET`. After the Vercel cutover, its `APP_URL` points to the Vercel production alias until the custom domain resolves, then to lacey.january.ie. It has no LLM dependency. The earlier ChatGPT task still requires separate account cleanup if enabled; it is not used by this runner.
 
 BlockOps’ environment variables, storage and project configuration are unchanged. Vercel/Turso account limits and the Resend account quota are shared account-level limits even though project data and app keys are isolated.
 

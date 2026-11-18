@@ -15,6 +15,9 @@ jobs:
       revision: ${{ steps.live.outputs.revision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ vars.LACEY_SOURCE_REPOSITORY }}
+          ref: main
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
@@ -22,4 +25,4 @@ jobs:
         run: bun scripts/live-revision.ts
         env:
           APP_URL: ${{ vars.APP_URL }}
-          GITHUB_TOKEN: ${{ github.token }}
+          LACEY_SOURCE_REPOSITORY: ${{ vars.LACEY_SOURCE_REPOSITORY }}

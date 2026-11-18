@@ -27,6 +27,10 @@ Use Bun for this repository's scripts, checks, builds and tests.
 - Scheduled refresh and retention writers must resolve the live build's SHA,
   require successful exact-revision quality checks, and check out that SHA
   before receiving production credentials. Never bypass this with `main`.
+- Production schedules, credentials, logs and encrypted backup artifacts belong
+  in the private operations repository. `operations/workflows/` contains the
+  templates. Never enable production writers or upload customer backups in
+  this public source repository. Public CI uses isolated fixtures only.
 - Database migrations are explicit, backed up and additive. Never reset, seed
   over, or recreate production data to fix a loading failure.
 - The approved Turso → Postgres migration copies to a new empty destination,

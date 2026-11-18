@@ -42,6 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ vars.LACEY_SOURCE_REPOSITORY }}
           ref: ${{ needs.live-release.outputs.revision }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -51,8 +52,6 @@ jobs:
         env:
           DIRECT_COLLECTION: 'true'
           LACEY_PG_DATABASE_URL: ${{ secrets.LACEY_PG_DATABASE_URL }}
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           CATALOGUE_ONLY: ${{ inputs.catalogue_only }}
@@ -84,6 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ vars.LACEY_SOURCE_REPOSITORY }}
           ref: ${{ needs.live-release.outputs.revision }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -93,8 +93,6 @@ jobs:
         env:
           DIRECT_COLLECTION: 'true'
           LACEY_PG_DATABASE_URL: ${{ secrets.LACEY_PG_DATABASE_URL }}
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           CATALOGUE_ONLY: 'true'
