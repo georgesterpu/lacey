@@ -1,7 +1,7 @@
 import { shoeIdentity } from './shoe-identity';
 export interface Statement { bind(...values: unknown[]): Statement; all<T=Record<string,unknown>>(): Promise<{results:T[]}>; first<T=Record<string,unknown>>(): Promise<T|null>; run(): Promise<unknown>; }
 export interface DB { dialect?:'sqlite'|'postgres'; prepare(sql:string):Statement; batch(statements:Statement[]):Promise<unknown>; }
-export interface Env { DB:DB; RESEND_API_KEY?:string; EMAIL_FROM?:string; APP_URL?:string; CRON_SECRET?:string; DAILY_EMAIL_LIMIT?:string; REQUIRE_PREFLIGHT?:boolean; }
+export interface Env { DB:DB; REVISION?:string; RESEND_API_KEY?:string; EMAIL_FROM?:string; APP_URL?:string; CRON_SECRET?:string; DAILY_EMAIL_LIMIT?:string; REQUIRE_PREFLIGHT?:boolean; }
 export interface Offer { id:string; source_id:string; product_id:string; title:string; brand:string; category:string; fit:string; size_system:string; size:string; colour:string; price:number; reference_price:number|null; currency:string; image:string; url:string; available:number; checked_at:string; }
 export interface Watch { id:string; owner_id:string; email:string; kind:string; query:string; category:string; fit:string; size_system:string; size:string; colour:string; budget:number; min_discount:number; active:number; created_at:string; consent_at:string; }
 export const categories = ['any','daily','stability','race','trail'] as const;

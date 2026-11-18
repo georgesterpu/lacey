@@ -24,6 +24,9 @@ Use Bun for this repository's scripts, checks, builds and tests.
   unsubscribe links or real emails during a release check.
 - Keep automatic main-branch deployment disabled. Native Git integration stays
   linked, while the guarded release command controls production promotion.
+- Scheduled refresh and retention writers must resolve the live build's SHA,
+  require successful exact-revision quality checks, and check out that SHA
+  before receiving production credentials. Never bypass this with `main`.
 - Database migrations are explicit, backed up and additive. Never reset, seed
   over, or recreate production data to fix a loading failure.
 - The approved Turso → Postgres migration copies to a new empty destination,

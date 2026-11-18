@@ -79,7 +79,7 @@ test('scheduler requires its own secret, and failures admit only three attempts'
  const env=await database();env.CRON_SECRET='test-only';expect((await Promise.all(Array.from({length:6},()=>claim(env,'one-claim')))).filter(Boolean)).toHaveLength(1);
  expect((await handle(request('/api/internal/scan','POST'),env,'')).status).toBe(401);
  const original=globalThis.fetch;let calls=0;
- globalThis.fetch=(async()=>{calls++;return new Response('Temporary source failure',{status:503});}) as unknown as typeof fetch;
+ globalThis.fetch=(async()=>{calls++;return new Response('Permanent source failure',{status:400});}) as unknown as typeof fetch;
  try{for(let n=0;n<3;n++){const r=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(r.status).toBe('failed');}expect(calls).toBe(12);const last=await(await handle(request('/api/internal/scan','POST',undefined,undefined,{Authorization:'Bearer test-only'}),env,'')).json();expect(last.skipped).toBe(true);expect(calls).toBe(12);}finally{globalThis.fetch=original;}
 });
 

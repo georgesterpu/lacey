@@ -149,9 +149,9 @@ test('catalogue-only collection reuses a running scan without launching or waiti
   expect(result.code).toBe(0);
   expect(result.paths).toEqual(['/api/health','/api/internal/catalogue']);
 });
-test('a known cached-source delay still completes delivery checks and backup without hiding a genuine failed-source report',async()=>{
+test.each(['cached','unavailable'])('a known %s-source delay still completes delivery checks and backup',async(status)=>{
  const result=await run(path=>{
-  if(path==='/api/internal/scan')return Response.json({runId,status:'partial',reports:[{source:'Example',status:'cached'}]});
+  if(path==='/api/internal/scan')return Response.json({runId,status:'partial',reports:[{source:'Example',status}]});
   if(path==='/api/internal/dispatch')return Response.json({plan:{planned:0,done:true},delivery:{sent:0,status:'configured',remaining:0}});
   if(path==='/api/health')return Response.json({run:{id:runId},stale:false,emailReady:true});
   if(path==='/api/internal/backup')return new Response('LACEY01\nfixture-ciphertext');

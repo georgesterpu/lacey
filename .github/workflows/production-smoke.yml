@@ -1,4 +1,4 @@
-name: Production shoe-loading check
+name: Live website check (no deployment)
 on:
   workflow_dispatch:
   schedule:

@@ -1,4 +1,4 @@
-name: Lacey checks and digests
+name: Price refresh and email alerts (no deployment)
 on:
   schedule:
     - cron: '0 8,20 * * *'
@@ -27,8 +27,12 @@ on:
         default: ''
 permissions:
   contents: read
+  actions: read
 jobs:
+  live-release:
+    uses: ./.github/workflows/live-release.yml
   refresh-and-deliver:
+    needs: live-release
     if: ${{ !inputs.catalogue_only }}
     concurrency:
       group: lacey-checks
@@ -37,6 +41,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.live-release.outputs.revision }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
@@ -61,9 +67,9 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
   catalogue:
-    needs: refresh-and-deliver
+    needs: [live-release, refresh-and-deliver]
     # A failed small feed or delivery must not prevent unrelated shop recovery.
-    if: ${{ !cancelled() && !inputs.delivery_only }}
+    if: ${{ !cancelled() && needs.live-release.result == 'success' && !inputs.delivery_only }}
     concurrency:
       group: lacey-catalogue-${{ matrix.source }}
       cancel-in-progress: false
@@ -77,6 +83,8 @@ jobs:
     timeout-minutes: 100
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.live-release.outputs.revision }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json

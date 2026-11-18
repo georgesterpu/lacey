@@ -232,7 +232,7 @@ export async function verifySite(base: string, renderBudgetMs = 8000) {
 }
 
 // Protected staging deployments retain Vercel authentication. This loopback
-// bridge uses the authenticated CLI and forwards only four read-only paths.
+// bridge uses the authenticated CLI and forwards only these read-only paths.
 export async function protectedSite(deployment: string) {
   const paths = new Map([
     ["/", "text/html; charset=utf-8"],
@@ -240,6 +240,7 @@ export async function protectedSite(deployment: string) {
     ["/style.css", "text/css; charset=utf-8"],
     ["/api/catalogue", "application/json"],
     ["/api/watchlist", "application/json"],
+    ["/api/health", "application/json"],
   ]);
   const bodies = new Map<string, string>();
   // Measure the origin request itself, excluding CLI sign-in/startup overhead.

@@ -218,4 +218,4 @@ if (scan.status === "partial"&&(!scan.reports||scan.reports.some(r=>r.status==='
   throw new Error(
     "A shop failed validation; healthy sources were processed. Inspect source checks.",
   );
-if(scan.reports?.some(r=>r.status==='cached'))console.log('Some shop refreshes are delayed. Previous browsing snapshots retain their original timestamps; failed sources are excluded from email matching.');
+if(scan.reports?.some(r=>['cached','unavailable'].includes(r.status)))console.log('Some shop refreshes are delayed. Browsing snapshots retain their original timestamps and expiry; unavailable sources are excluded from email matching.');

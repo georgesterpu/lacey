@@ -221,7 +221,8 @@ export function misterListing(html: string, url: string) {
     throw new RetailerRequestError(`MisterRunning returned page ${pager[1]} instead of ${current.searchParams.get('p')??1}`,true);
   if (next)
     for (const key of [...next.searchParams.keys()])
-      if (/^(?:utm_|_gl$|_ga(?:_|$)|_gac_|gad_|gclid$|gclsrc$|fbclid$|msclkid$|srsltid$|wbraid$|gbraid$)/i.test(key))
+      if (/^(?:utm_|_gl$|_ga(?:_|$)|_gac_|gad_|gclid$|gclsrc$|fbclid$|msclkid$|srsltid$|wbraid$|gbraid$)/i.test(key) ||
+          (key === '_escaped_fragment_' && next.searchParams.getAll(key).every(value => value === '')))
         next.searchParams.delete(key);
   if (
     next &&

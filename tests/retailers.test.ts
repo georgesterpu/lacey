@@ -139,6 +139,14 @@ test("catalogue pagination follows the next page and cannot change country or re
     ).products,
   ).toEqual(["https://www.runningwarehouse.eu/Shoe/descpage-ABC-EN.html"]);
 });
+test('MisterRunning strips only an empty escaped-fragment hint and still requires a forward page in the same catalogue',()=>{
+ const url='https://www.misterrunning.com/en/mens-running-shoes/?p=31';
+ const html=`<a href="${mr}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a><ul class="pagination"><li>31 di 32</li></ul><a href="?p=32&amp;_escaped_fragment_=" rel="next">Next</a>`;
+ expect(misterListing(html,url).next).toBe('https://www.misterrunning.com/en/mens-running-shoes/?p=32');
+ for(const bad of ['_escaped_fragment_=other','_escaped_fragment_=&amp;country=DE','_escaped_fragment_=&amp;_escaped_fragment_=other'])
+   expect(()=>misterListing(html.replace('_escaped_fragment_=',bad),url)).toThrow('advance');
+ expect(()=>misterListing(html.replace('?p=32','?p=30'),url)).toThrow('advance');
+});
 test("MisterRunning finishes only when its explicit current/total pager confirms the final page", () => {
   const product = `<a href="${mr}" data-products-price="€ 100,00" data-products-price-old="€ 160,00">Shoe</a>`,
     pager =

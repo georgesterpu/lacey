@@ -22,7 +22,7 @@ export async function appFetch(request:Request){
    await db.execute({sql:"INSERT INTO app_state(key,value) VALUES('last_backup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",args:[backup.createdAt]});
    return new Response(bytes,{headers:{'Content-Type':'application/octet-stream','Cache-Control':'no-store','Content-Disposition':`attachment; filename="lacey-${backup.createdAt.slice(0,10)}.enc"`}});
   }
-  const env=runtimeEnv(databaseAdapter(db),url.origin,process.env);
+  const env={...runtimeEnv(databaseAdapter(db),url.origin,process.env),REVISION:process.env.LACEY_BUILD_REVISION};
   return await handle(request,env,clientCode);
   } finally {if(internal)db.close();}
  }catch(error){console.error('Lacey request failed',{type:error instanceof Error?error.name:'Unknown'});return Response.json({error:'Temporarily unavailable. Please try again shortly.'},{status:503,headers:{'Cache-Control':'no-store'}});}

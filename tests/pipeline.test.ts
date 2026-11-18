@@ -77,6 +77,23 @@ test('a repeated completed cached slot retains its reports after the collection 
  globalThis.fetch=(async()=>{throw Error('A repeated cached slot must not contact the retailer')}) as unknown as typeof fetch;
  const result=await scan(env);expect(result.skipped).toBe(true);expect(result.reports).toHaveLength(4);expect(result.reports!.every(r=>r.status==='cached')).toBe(true);
 });
+test('throttling after cache expiry hides old shoes without blocking fresh shops or retrying the throttled feeds',async()=>{
+ const {env}=await database(),expired=await runWithOffers(env,[product(711)]),old=new Date(Date.now()-31*3600000).toISOString();
+ await env.DB.prepare("UPDATE sources SET last_success=? WHERE id='amphibian'").bind(old).run();
+ await env.DB.prepare('UPDATE offer_snapshots SET checked_at=? WHERE run_id=?').bind(old,expired.id).run();
+ await publicSourceStatement(env,await env.DB.prepare("SELECT * FROM sources WHERE id='amphibian'").first<any>(),expired.rows.map(o=>({...o,checked_at:old}))).run();
+ await env.DB.prepare("INSERT INTO app_state VALUES('ops:source-pause:lifestyle','Image access unavailable')").run();
+ const good=product(712);await otherShop(env,expired.id,good);
+ // Stand in for an independently published paged shop with current stock.
+ await env.DB.prepare("UPDATE offer_snapshots SET source_id='21run' WHERE source_id='runhub'").run();
+ await env.DB.prepare("UPDATE sources SET status='live',live_snapshot_id=?,last_success=? WHERE id='21run'").bind(`${expired.id}:runhub`,new Date().toISOString()).run();
+ let requests=0;globalThis.fetch=(async()=>{requests++;return new Response('',{status:429});}) as unknown as typeof fetch;
+ const result=await scan(env);expect(result.status).toBe('partial');expect(result.reports!.filter(r=>r.status==='unavailable')).toHaveLength(3);
+ expect((await readPublicCatalogue(env)).offers).toHaveLength(0);
+ await watch(env,'fresh-shop','runner@example.test');expect((await planDigests(env,result.runId)).planned).toBe(1);
+ await scan(env);expect(requests).toBe(3);
+ expect((await env.DB.prepare("SELECT last_success FROM sources WHERE id='amphibian'").first<any>()).last_success).toBe(old);
+},10000);
 test('an expired completed scan still cannot plan or send email without recollection',async()=>{
  const {env}=await database(),run=await runWithOffers(env,[product(708)]),old=new Date(Date.now()-7*3600000).toISOString();
  await env.DB.prepare('UPDATE scan_runs SET started_at=?,completed_at=? WHERE id=?').bind(old,old,run.id).run();

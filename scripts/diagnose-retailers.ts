@@ -1,7 +1,7 @@
 // Read-only production incident evidence; no database or email credentials.
 import {retailerPage} from '../src/retailer-http';
 import {misterListing} from '../src/misterrunning';
-const url='https://www.misterrunning.com/en/mens-running-shoes/?p=2';
+const url='https://www.misterrunning.com/en/mens-running-shoes/?p=31';
 try{
  const html=await retailerPage(url);
  console.log('MisterRunning pagination',{

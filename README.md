@@ -44,6 +44,11 @@ This creates, reloads, pauses and deletes a test watch; use development data. Un
 
 ## Code-only scheduler
 
+Production data writers use the exact live, tested Git revision, rather than
+unreleased `main`. Website deployment stays manual through `bun run release`.
+See [the workflow and deployment safety explanation](docs/incident-2026-11-18.md)
+for schedules, the two failure modes, and the limits of each safeguard.
+
 The private GitHub repository `georgesterpu/shoehoo-jobs` contains this source, parser/build CI and the deterministic scheduler. `.github/workflows/shoehoo-checks.yml` targets 08:00 and 20:00 in `Europe/Dublin`, using TypeScript executed directly by Bun from `scripts/run-jobs.ts`. Both workflows read the Bun version from `package.json`. A 15-minute catch-up trigger reuses the same slot if needed, without repeating a completed scan or digest. It has no language model or agent dependency. `CRON_SECRET` is a runtime/Actions secret; `APP_URL` is an Actions variable. The app remains public; the writer is authenticated. See the [stack and upgrade notes](docs/stack.md) for runtime boundaries, parser implementation and current package versions.
 
 The job collects all shops once, retries failed sources within bounds, plans indexed matches in recipient pages, drains validated digests, and reads back health. The old ChatGPT automation must be turned off separately if still enabled; available Sites tools expose its state but cannot edit/disable it. Its former unauthenticated writer call is rejected by the new endpoint.

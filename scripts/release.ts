@@ -87,7 +87,7 @@ assert.ok(
 );
 console.log("Staging production build without changing the live domain…");
 const staged = json(
-  await cli("deploy", "--prod", "--skip-domain", "--yes"),
+  await cli("deploy", "--prod", "--skip-domain", "--yes", "--build-env", `LACEY_RELEASE_REVISION=${revision}`),
 ).deployment;
 assert.ok(
   staged?.url?.startsWith("https://lacey-") &&
@@ -102,6 +102,7 @@ await command([
 ]);
 const proxy = await protectedSite(staged.url);
 try {
+  assert.equal((await (await fetch(new URL('/api/health', proxy.url),{signal:AbortSignal.timeout(10000)})).json()).revision, revision, 'Staged release revision does not match');
   await verifySite(proxy.url.origin);
 } finally {
   proxy.stop(true);
@@ -111,6 +112,7 @@ console.log(
 );
 await cli("promote", staged.url, "--yes");
 try {
+  assert.equal((await (await fetch(new URL('/api/health', site),{signal:AbortSignal.timeout(10000)})).json()).revision, revision, 'Live release revision does not match');
   await verifySite(site);
   console.log(
     `Released ${revision.slice(0, 7)} to ${site}; public browser checks passed.`,
