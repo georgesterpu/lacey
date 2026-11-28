@@ -133,6 +133,23 @@ async function request(url: string, policy?: string) {
   queue = work.catch(() => {});
   return work;
 }
+// Share one robots policy between catalogue steps and product checks. Keep the
+// cache tied to the fetch transport so isolated test workers cannot share it.
+let policyCache: { fetcher: typeof fetch; until: number; text: Promise<string> } | undefined;
+function robotsPolicy() {
+  if (policyCache?.fetcher === fetch && policyCache.until > Date.now())
+    return policyCache.text;
+  const entry = {
+    fetcher: fetch,
+    until: Date.now() + 30 * 60000,
+    text: request(`${origin}/robots.txt`),
+  };
+  policyCache = entry;
+  void entry.text.catch(() => {
+    if (policyCache === entry) policyCache = undefined;
+  });
+  return entry.text;
+}
 interface Size {
   attribute_code: string;
   label: { content: string };
@@ -383,7 +400,7 @@ async function loadProduct(
   return twentyOneOffers(url, id, data, parent, now);
 }
 export async function twentyOneProduct(url: string, now: string) {
-  return product(url, now, await request(`${origin}/robots.txt`), true);
+  return product(url, now, await robotsPolicy(), true);
 }
 export interface CatalogueProduct {
   url: string;
@@ -451,7 +468,7 @@ export async function twentyOneStep(cursor: CrawlCursor | null, now: string) {
         held: 0,
         createdAt: now,
       };
-  const policy = await request(`${origin}/robots.txt`),
+  const policy = await robotsPolicy(),
     offers: Offer[] = [];
   if (!state.queue.length && state.pageUrl) {
     const page = twentyOnePage(

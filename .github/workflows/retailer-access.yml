@@ -5,7 +5,7 @@ on:
       source:
         description: Retailer to check without database or email credentials
         type: choice
-        options: [warehouse, sportsdirect, all, incident]
+        options: [warehouse, sportsdirect, misterrunning, lifestyle, all, incident]
         default: warehouse
       product_url:
         description: Optional public Warehouse product to verify in the same country session

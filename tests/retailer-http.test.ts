@@ -9,6 +9,6 @@ test('a failed retailer connection is retryable transport failure, not a bad pro
  }) as unknown as typeof fetch;
  try{
   try{await retailerPage('https://www.misterrunning.com/en/network-fixture.html');throw Error('Expected request failure');}
-  catch(error){expect(error).toBeInstanceOf(RetailerRequestError);expect(error).toMatchObject({retryable:true,message:'Retailer network request failed'});}
+  catch(error){expect(error).toBeInstanceOf(RetailerRequestError);expect(error).toMatchObject({retryable:true,message:'Retailer network request failed (www.misterrunning.com; TypeError)'});}
  }finally{globalThis.fetch=original;}
 });

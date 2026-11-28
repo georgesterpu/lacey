@@ -23,7 +23,7 @@ revision and its passing CI result. Database jobs then check out that exact
 revision before receiving credentials. Cross-repository source checks are public
 reads and don’t require sharing the private repository’s token.
 
-Price checks target 08:00 and 20:00 Europe/Dublin, with catch-up at :15.
+Price checks target 08:07 and 20:07 Europe/Dublin, with catch-up at :37.
 Retention targets 03:00. GitHub can delay scheduled events. Configure your own
 timezone if needed, and keep the existing idempotent slot behaviour in mind.
 

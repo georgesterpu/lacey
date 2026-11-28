@@ -8,5 +8,5 @@ export function scheduleSlot(now=new Date()) {
  return `${date}:${hour<20?'08':'20'}`;
 }
 export function nextCheck(now=new Date()) {
- for(let mins=1;mins<=13*60;mins++){const candidate=new Date(Math.floor(now.getTime()/60000)*60000+mins*60000);const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Dublin',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(candidate);if(parts==='08:00'||parts==='20:00')return candidate.toISOString();}return null;
+ for(let mins=1;mins<=13*60;mins++){const candidate=new Date(Math.floor(now.getTime()/60000)*60000+mins*60000);const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Dublin',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(candidate);if(parts==='08:07'||parts==='20:07')return candidate.toISOString();}return null;
 }

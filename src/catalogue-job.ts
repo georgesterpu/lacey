@@ -19,6 +19,10 @@ import { sources } from "./sources";
 import { offerStatements, inventorySummary } from "./snapshots";
 import { scheduleSlot } from "./schedule";
 
+const retryLimit = 3;
+const transportCooldownMs = 45 * 60000;
+type CrawlRetry = { attempts: number; after: number; createdAt: string };
+
 // Every paged shop shares leases, retries, checkpoints and atomic publication.
 // Only listing/product decoding differs. No product limits or shoe names.
 export async function advanceCatalogue(
@@ -105,7 +109,7 @@ export async function advanceCatalogue(
         .bind(retryKey)
         .first<{ value: string }>(),
       retry = saved
-        ? (JSON.parse(saved.value) as { attempts: number; after: number })
+        ? (JSON.parse(saved.value) as CrawlRetry)
         : null;
     const cooldownEnded =
       job.details?.includes("paused:") &&
@@ -114,14 +118,13 @@ export async function advanceCatalogue(
     if (
       (!retry &&
         job.details !== "21RUN product identity mismatch" &&
-        !cooldownEnded) ||
-      (retry && retry.attempts >= 3)
+        !cooldownEnded)
     )
       return { done: true, status: "failed", error: job.details };
     if (retry && retry.after > Date.now())
       return {
-        done: false,
-        status: "retrying",
+        done: retry.attempts >= retryLimit,
+        status: retry.attempts >= retryLimit ? "deferred" : "retrying",
         retryAfterMs: retry.after - Date.now(),
         error: job.details,
       };
@@ -314,22 +317,18 @@ export async function advanceCatalogue(
     const message = (error as Error).message.slice(0, 350);
     const transient=error instanceof RetryableRequestError||(error instanceof RetailerRequestError&&error.retryable)||['TimeoutError','AbortError'].includes((error as Error).name);
     const retainPublished=transient&&await canRetainPublished(env,sourceId);
-    let retry:
-      { attempts: number; after: number; createdAt: string } | undefined;
-    if (
-      error instanceof RetryableRequestError ||
-      (error instanceof RetailerRequestError && error.retryable) ||
-      ["TimeoutError", "AbortError"].includes((error as Error).name)
-    ) {
+    let retry: CrawlRetry | undefined;
+    if (transient) {
       const saved = await env.DB.prepare(
           "SELECT value FROM app_state WHERE key=?",
         )
           .bind(retryKey)
           .first<{ value: string }>(),
-        attempts = (saved ? Number(JSON.parse(saved.value).attempts) : 0) + 1;
+        previous = saved ? (JSON.parse(saved.value) as CrawlRetry).attempts : 0,
+        attempts = (previous >= retryLimit ? 0 : previous) + 1;
       retry = {
         attempts,
-        after: Date.now() + attempts * 15000,
+        after: Date.now() + (attempts >= retryLimit ? transportCooldownMs : attempts * 15000),
         createdAt: now,
       };
     }
@@ -347,7 +346,9 @@ export async function advanceCatalogue(
         "UPDATE sources SET status='error',error=?,last_attempt=? WHERE id=?",
       ).bind(message, now, sourceId),
     ]);
-    return retry && retry.attempts < 3
+    if (/paused: HTTP (401|403|406|429)\b/.test(message))
+      return { done: true, status: "paused", error: message };
+    return retry && retry.attempts < retryLimit
       ? {
           done: false,
           status: "retrying",

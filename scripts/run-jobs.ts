@@ -121,8 +121,8 @@ if (catalogueOnly) {
       sourceId:process.env.CATALOGUE_SOURCE??'21run',
     });
     console.log(JSON.stringify({ stage: "catalogue", ...result }));
-    if(result.status==='paused'){
-      console.log('Retailer is paused; no import performed and no email requested. The shop status retains its blocking reason.');
+    if (result.status === 'paused' || result.status === 'deferred') {
+      console.warn(`::warning::Retailer import ${result.status}. The published catalogue retains its original check time and expiry.`);
       process.exit(0);
     }
     if (result.done) {

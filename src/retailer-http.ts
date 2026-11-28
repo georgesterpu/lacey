@@ -92,8 +92,10 @@ async function document(url: URL, irelandVAT = false): Promise<string> {
       });
       status = r.status;
       text = await r.text();
-    } catch {
-      throw new RetailerRequestError("Retailer network request failed", true);
+    } catch (error) {
+      const cause = error as { name?: string; code?: string };
+      const type = [cause.name, cause.code].filter(part => part && /^[\w-]{1,50}$/.test(part)).join("/");
+      throw new RetailerRequestError(`Retailer network request failed (${url.hostname}${type ? `; ${type}` : ''})`, true);
     }
   }
   if ([401, 403, 406, 429].includes(status))

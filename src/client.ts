@@ -74,13 +74,14 @@ async function load(){
  const personal=api('/api/watchlist').then(value=>({value}),error=>({error}));
  data={...await api('/api/catalogue'),watches:data?.watches??[]};
  data!.offers=data!.offers.filter(o=>o.checked_at>=freshCutoff());
- $('#scan-status').textContent=data!.lastScan?`Checked ${ago(data!.lastScan)}`:'First check pending';
+ const latestImport=data!.sources.reduce<string|null>((latest,shop)=>shop.last_success&&(!latest||shop.last_success>latest)?shop.last_success:latest,null);
+ $('#scan-status').textContent=latestImport?`Latest shop import ${ago(latestImport)}`:'First import pending';
  const brands=[...new Set(data!.offers.map(o=>o.brand))].sort(),prev=value('filter-brand');
  $('#filter-brand').innerHTML='<option value="any">Any brand</option>'+brands.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');if(brands.includes(prev))$<HTMLSelectElement>('#filter-brand').value=prev;
  const shopSelect=$<HTMLSelectElement>('#filter-region'),chosenShop=shopSelect.value;shopSelect.innerHTML='<option value="any">All shops</option><option value="IE">🇮🇪 Irish shops</option><option value="EU">🇪🇺 EU shops</option><optgroup label="Individual shops">'+data!.sources.filter(s=>s.adapter!=='planned').map(s=>`<option value="shop:${esc(s.id)}">${esc(s.name)}</option>`).join('')+'</optgroup>';shopSelect.value=chosenShop;
  const watchBrands=[...new Set([...brands,'ASICS','HOKA','BROOKS','SAUCONY','NIKE','ADIDAS','NEW BALANCE','ON','PUMA','MIZUNO'])].sort();$('#watch-brand').innerHTML=watchBrands.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
  $('#model-suggestions').innerHTML=[...new Set(data!.offers.map(shoeTitle))].slice(0,150).map(t=>`<option value="${esc(t)}"></option>`).join('');
- $('#pipeline-status').textContent=`Checks at 08:00 and 20:00, Dublin time. ${data!.pipeline?`Latest run: ${data!.pipeline.status}.`:''} Prices and links are checked again before sale emails.`;
+ $('#pipeline-status').textContent=`Checks run twice daily, around 8am and 8pm Dublin time. Each shop shows when its last import completed. Prices and links are checked again before sale emails.`;
  renderProducts();renderSources();
  // Personal watch data is private and never part of the CDN catalogue. A slow
  // private request cannot hold the public shoes and filters in loading state.

@@ -120,17 +120,24 @@ test('a temporary retailer failure backs off and retries the same product withou
  },url=>url.includes('/sizeselector/')&&++requests===1?new Response('',{status:503}):null);
 },15000);
 
-test('persistent retailer failures stop after three attempts rather than looping forever',async()=>{
- let requests=0;
+test('a later worker can resume an exhausted checkpoint after a transport cooldown',async()=>{
+ let requests=0,policyRequests=0;
  await scenario(async(env,run,db)=>{
   await checkpoint(env,run);
   for(let n=1;n<=3;n++){
    expect((await advanceCatalogue(env,run)).done).toBe(n===3);
-   expireRetry(db,run);
+   if(n<3)expireRetry(db,run);
   }
-  expect((await advanceCatalogue(env,run)).status).toBe('failed');
+  expect(await advanceCatalogue(env,run)).toMatchObject({done:true,status:'deferred'});
   expect(requests).toBe(3);
- },url=>url.includes('/sizeselector/')?(requests++,new Response('',{status:503})):null);
+  expireRetry(db,run);
+  expect(await advanceCatalogue(env,run)).toMatchObject({done:true,status:'complete',checked:1});
+  expect(requests).toBe(4);
+  expect(policyRequests).toBe(1);
+ },url=>{
+  if(url.endsWith('/robots.txt'))policyRequests++;
+  return url.includes('/sizeselector/')&&++requests<=3?new Response('',{status:503}):null;
+ });
 },15000);
 
 test('robots restrictions are permanent failures, never product skips or automatic retries',async()=>{

@@ -1,10 +1,11 @@
 name: Price refresh and email alerts (no deployment)
 on:
   schedule:
-    - cron: '0 8,20 * * *'
+    # Offset from the top of the hour, when GitHub schedules are busiest.
+    - cron: '7 8,20 * * *'
       timezone: 'Europe/Dublin'
     # A missed primary event can be caught without repeating a completed scan or digest.
-    - cron: '15 8,20 * * *'
+    - cron: '37 8,20 * * *'
       timezone: 'Europe/Dublin'
   workflow_dispatch:
     inputs:
